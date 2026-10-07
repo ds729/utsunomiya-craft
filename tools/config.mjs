@@ -22,6 +22,9 @@ export const FETCH_MARGIN_M = 100;
 
 export const MAX_H = 96;
 
+// スポーン探索の目標にする POI 名（JR宇都宮駅 東口）
+export const SPAWN_POI_NAME = '宇都宮駅東口';
+
 export const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 export const USER_AGENT = 'utsunomiya-craft/0.1 (personal, non-commercial)';
 

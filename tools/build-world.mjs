@@ -1,7 +1,8 @@
 // data/raw/osm.json → public/world/{ground,bld,bldtype,deck}.bin + world.json
 // 使い方: node tools/build-world.mjs
 import fs from 'node:fs';
-import { EXTENT, MAX_H, PATHS } from './config.mjs';
+import zlib from 'node:zlib';
+import { EXTENT, MAX_H, PATHS, SPAWN_POI_NAME } from './config.mjs';
 import { buildWorld } from './lib/world.mjs';
 import { MAT_NAMES, BTYPE_NAMES } from './lib/tags.mjs';
 
@@ -9,7 +10,20 @@ const t0 = performance.now();
 const osm = JSON.parse(fs.readFileSync(PATHS.osm, 'utf8'));
 const w = buildWorld(osm, EXTENT);
 fs.mkdirSync(PATHS.worldDir, { recursive: true });
-for (const name of ['ground', 'bld', 'bldtype', 'deck']) fs.writeFileSync(`${PATHS.worldDir}/${name}.bin`, w[name]);
+// 配信は gzip（ブラウザの DecompressionStream で展開）。生 .bin は残さない
+const FILES = ['ground', 'bld', 'bldtype', 'deck'];
+const files = {};
+for (const name of FILES) {
+  files[name] = `${name}.bin.gz`;
+  fs.writeFileSync(`${PATHS.worldDir}/${files[name]}`, zlib.gzipSync(w[name], { level: 9 }));
+  fs.rmSync(`${PATHS.worldDir}/${name}.bin`, { force: true });
+}
+
+// スポーン探索の目標点: 「宇都宮駅東口」の名を持つ POI の平均（実際の位置は実行時に歩行可能セルを探索）
+const east = w.pois.filter((p) => p.name === SPAWN_POI_NAME);
+const spawnTarget = east.length
+  ? { x: Math.round(east.reduce((a, p) => a + p.x, 0) / east.length), z: Math.round(east.reduce((a, p) => a + p.z, 0) / east.length), from: SPAWN_POI_NAME }
+  : { x: 0, z: 0, from: 'origin' };
 
 const world = {
   version: 1,
@@ -19,6 +33,10 @@ const world = {
   resolution: 1,
   axes: '+x=east, -z=north; cell (i,j) covers x∈[i-west, i-west+1), z∈[j-north, j-north+1); index = j*size.x + i',
   maxHeight: MAX_H,
+  files,
+  encoding: 'gzip, Uint8 per cell',
+  bldtypeFormat: 'low 4 bits = buildingTypes id, high 4 bits = color variant (hash of OSM id)',
+  spawnTarget,
   materials: MAT_NAMES,
   buildingTypes: BTYPE_NAMES,
   pois: w.pois,
@@ -34,4 +52,6 @@ for (let k = 0; k < w.bld.length; k++) { if (w.bld[k]) { bldCells++; if (w.bld[k
 console.log(`ワールド ${w.W}×${w.H} m、生成 ${(performance.now() - t0).toFixed(0)} ms`);
 console.log('統計', w.stats);
 console.log(`建物セル ${bldCells}（${(100 * bldCells / w.bld.length).toFixed(1)}%）最大高さ ${maxH}m、デッキセル ${deckCells}、POI ${w.pois.length}`);
+console.log('スポーン目標', spawnTarget);
+console.log('gzip サイズ', Object.fromEntries(FILES.map((n) => [n, fs.statSync(`${PATHS.worldDir}/${files[n]}`).size])));
 console.log('地表材質の面積[m²]', hist);

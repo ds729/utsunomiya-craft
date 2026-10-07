@@ -1,0 +1,9 @@
+{
+  "name": "utsunomiya-craft-e2e",
+  "private": true,
+  "type": "module",
+  "description": "ヘッドレス描画検証専用（public/ には持ち込まない）",
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

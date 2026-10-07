@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Utsunomiya Craft</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc4e8; font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  canvas { display: block; }
+  .hud { position: fixed; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.8); pointer-events: none; font-size: 13px; }
+  #crosshair { left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: rgba(255,255,255,.85); box-shadow: 0 0 2px rgba(0,0,0,.6); }
+  #crosshair::before { left: 8px; top: 0; width: 2px; height: 18px; }
+  #crosshair::after { left: 0; top: 8px; width: 18px; height: 2px; }
+  #compass { left: 50%; top: 8px; width: 280px; height: 24px; margin-left: -140px; background: rgba(0,0,0,.35); border-radius: 4px; overflow: hidden; }
+  #compass span { position: absolute; top: 4px; transform: translateX(-50%); font-weight: 600; }
+  #compass span.major { color: #ffd34d; }
+  #compass::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 2px; height: 6px; margin-left: -1px; background: #fff; }
+  #poi { left: 50%; top: 40px; transform: translateX(-50%); font-size: 18px; font-weight: 600; white-space: nowrap; }
+  #info { left: 8px; top: 8px; line-height: 1.5; background: rgba(0,0,0,.35); padding: 4px 8px; border-radius: 4px; font-variant-numeric: tabular-nums; }
+  #license { right: 6px; bottom: 4px; font-size: 11px; background: rgba(0,0,0,.35); padding: 2px 6px; border-radius: 3px; }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20,30,45,.55); color: #fff; cursor: pointer; }
+  #overlay .box { max-width: 420px; margin: 16px; padding: 20px 24px; background: rgba(0,0,0,.55); border-radius: 8px; line-height: 1.7; }
+  #overlay h1 { margin: 0 0 8px; font-size: 22px; }
+  #overlay kbd { background: rgba(255,255,255,.15); border-radius: 3px; padding: 0 5px; font-family: inherit; }
+  #progress { height: 6px; background: rgba(255,255,255,.2); border-radius: 3px; margin-top: 12px; overflow: hidden; }
+  #progress div { height: 100%; width: 0; background: #ffd34d; transition: width .1s; }
+  #overlay.hidden { display: none; }
+  #error { color: #ffb3b3; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="crosshair" class="hud"></div>
+<div id="compass" class="hud"></div>
+<div id="poi" class="hud"></div>
+<div id="info" class="hud"></div>
+<div id="license" class="hud">© OpenStreetMap contributors</div>
+<div id="overlay">
+  <div class="box">
+    <h1>Utsunomiya Craft</h1>
+    <div>JR宇都宮駅周辺を 1ブロック=1m で歩く</div>
+    <div style="margin-top:8px">
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移動　<kbd>Shift</kbd> ダッシュ　<kbd>Space</kbd> ジャンプ<br>
+      <kbd>Space</kbd> 2回でフライ（<kbd>Space</kbd> 上昇／<kbd>Shift</kbd> 下降）<br>
+      <kbd>[</kbd> <kbd>]</kbd> 描画距離　<kbd>Esc</kbd> 一時停止（マウスを固定できない環境ではドラッグで視点）
+    </div>
+    <div id="status" style="margin-top:12px">読み込み中…</div>
+    <div id="progress"><div></div></div>
+  </div>
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

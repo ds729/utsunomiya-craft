@@ -51,3 +51,23 @@ test('buildWorld: 鉄道高架は layer に関係なく12m、並行する way �
   const w = buildWorld(osm, ext);
   for (let x = -5; x <= 4; x++) assert.equal(w.deck[cell(w, x + 0.5, 0)], 12, `x=${x}`);
 });
+
+test('buildWorld: 車道・線路を越えない道路の橋（川の橋）は地表の道路、越える橋と高架の外形は床板', () => {
+  const osm = {
+    origin,
+    elements: [
+      { type: 'way', id: 1, nodes: [1, 2], tags: { waterway: 'river', width: '10' }, geometry: geom([[-50, 0], [50, 0]]) },
+      { type: 'way', id: 2, nodes: [3, 4], tags: { highway: 'primary', bridge: 'yes', layer: '1' }, geometry: geom([[-20, -15], [-20, 15]]) },
+      { type: 'way', id: 3, nodes: [5, 6], tags: { highway: 'cycleway' }, geometry: geom([[-50, 6], [50, 6]]) },
+      { type: 'way', id: 7, nodes: [11, 12, 13, 14, 11], tags: { man_made: 'bridge', layer: '1' }, geometry: geom([[-26, -8], [-14, -8], [-14, 8], [-26, 8], [-26, -8]]) },
+      { type: 'way', id: 4, nodes: [7, 8], tags: { highway: 'footway', bridge: 'yes', layer: '1' }, geometry: geom([[20, -15], [20, 15]]) },
+      { type: 'way', id: 5, nodes: [9, 10], tags: { highway: 'residential' }, geometry: geom([[0, -10], [50, -10]]) },
+    ],
+  };
+  const w = buildWorld(osm, ext);
+  assert.equal(w.ground[cell(w, -20, 0)], MAT.ASPHALT, '川の上も道路として歩ける');
+  assert.equal(w.deck[cell(w, -20, 0)], 0, '床板にしない（自転車道の上は越えても数えない）');
+  assert.equal(w.deck[cell(w, -24, 0)], 0, '橋の外形も床板にしない');
+  assert.equal(w.deck[cell(w, 20, -10)], 6, '車道を越える歩道橋は床板');
+  assert.equal(w.stats.bridgesAtGrade, 1);
+});

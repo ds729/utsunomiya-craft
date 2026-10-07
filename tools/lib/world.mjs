@@ -10,6 +10,50 @@ const DECK_MAX = 30;
 const RAIL_VIADUCT_H = 12; // 鉄道高架は layer 値がまちまちなので一律の高さにする
 const RAIL_VIADUCT_W = 6;  // 並行する複線の高架が隙間なくつながる幅
 
+// OSM id → 0..15 の色バリエーション（整数ハッシュ）
+export function variantOf(id) {
+  let h = (Number(id) >>> 0) ^ Math.floor(Number(id) / 4294967296);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  return (h ^ (h >>> 16)) & 15;
+}
+
+// 偶奇規則の点内判定
+export function pointInRings([x, y], rings) {
+  let inside = false;
+  for (const r of rings) {
+    for (let k = 0, n = r.length; k < n; k++) {
+      const a = r[k], b = r[(k + 1) % n];
+      if ((a[1] > y) !== (b[1] > y) && x < a[0] + ((y - a[1]) * (b[0] - a[0])) / (b[1] - a[1])) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// 2 線分が交差するか（端点の接触は含まない）
+function segCross(a, b, c, d) {
+  const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const d1 = o(a, b, c), d2 = o(a, b, d), d3 = o(c, d, a), d4 = o(c, d, b);
+  return d1 * d2 < 0 && d3 * d4 < 0;
+}
+
+// way w の線が、ノードを共有しない他の線と交差するか（立体交差の判定）
+export function crossesAny(w, others) {
+  const line = w.g.line, nodes = new Set(w.el.nodes || []);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const [x, y] of line) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  for (const o of others) {
+    if (o === w || (o.el.nodes || []).some((n) => nodes.has(n))) continue;
+    const ol = o.g.line;
+    for (let k = 0; k + 1 < ol.length; k++) {
+      const c = ol[k], d = ol[k + 1];
+      if (Math.max(c[0], d[0]) < x0 || Math.min(c[0], d[0]) > x1 || Math.max(c[1], d[1]) < y0 || Math.min(c[1], d[1]) > y1) continue;
+      for (let m = 0; m + 1 < line.length; m++) if (segCross(line[m], line[m + 1], c, d)) return true;
+    }
+  }
+  return false;
+}
+
 export function buildWorld(osm, extent) {
   const W = extent.west + extent.east, H = extent.north + extent.south;
   const proj = makeProjection(osm.origin.lat, osm.origin.lon);
@@ -69,6 +113,17 @@ export function buildWorld(osm, extent) {
 
   // 3. 道路: 歩道 → 細い道 → 太い道 の順。高架は deck へ
   const roads = ways.filter((w) => w.g.line && !(w.t.area === 'yes')).map((w) => ({ w, r: roadInfo(w.t) })).filter((x) => x.r);
+  // 道路の橋のうち、他の車道・線路の上を越えないもの（川を渡る橋など）は地表の道路として塗る
+  // （layer=1 の橋をすべて 6m の床板にすると、前後に坂がないため道が途切れて歩けない）
+  // 越える対象は車道と線路だけ（橋の下をくぐる河川敷の歩道・自転車道は数えない）
+  const atGradeLines = [
+    ...roads.filter((x) => !x.r.elevated && x.r.material === MAT.ASPHALT).map((x) => x.w),
+    ...ways.filter((w) => w.g.line && railInfo(w.t)),
+  ];
+  stats.bridgesAtGrade = 0;
+  for (const x of roads) {
+    if (x.r.elevated && !crossesAny(x.w, atGradeLines)) { x.r = { ...x.r, elevated: false }; stats.bridgesAtGrade++; }
+  }
   roads.sort((p, q) => p.r.width - q.r.width);
   for (const { w, r } of roads) {
     if (!r.elevated && r.sidewalk) strokePolyline(w.g.line, r.width + SIDEWALK_W * 2, W, H, paint(ground, MAT.SIDEWALK));
@@ -104,7 +159,11 @@ export function buildWorld(osm, extent) {
     fillPolygon(w.g.rings, W, H, isPlatform ? paint(deck, RAIL_VIADUCT_H) : paintMax(deck, Math.min(DECK_MAX, layerOf(w.t) * DECK_PER_LAYER)));
   }
   stats.deckAreas = deckAreas.length;
+  // 橋の外形（man_made=bridge）は、中を高架のまま残った道路・線路が通るときだけ床板にする
+  const elevatedLines = [...roads.filter((x) => x.r.elevated).map((x) => x.w.g.line), ...rails.filter((x) => x.r.elevated).map((x) => x.w.g.line)];
   for (const w of ways) {
+    if (w.t.man_made !== 'bridge' || !w.g.rings) continue;
+    if (!elevatedLines.some((line) => line.some((pt) => pointInRings(pt, w.g.rings)))) { stats.bridgeAreasAtGrade = (stats.bridgeAreasAtGrade || 0) + 1; continue; }
     if (w.t.man_made === 'bridge' && w.g.rings) fillPolygon(w.g.rings, W, H, paintMax(deck, Math.min(DECK_MAX, Math.max(1, layerOf(w.t)) * DECK_PER_LAYER)));
   }
 
@@ -112,7 +171,8 @@ export function buildWorld(osm, extent) {
   const blds = ways.filter((w) => w.g.rings && w.t.building && w.t.building !== 'no' && !w.t['building:part']);
   const parts = ways.filter((w) => w.g.rings && w.t['building:part'] && w.t['building:part'] !== 'no');
   for (const w of [...blds, ...parts]) {
-    const h = buildingHeight(w.t), bt = buildingType(w.t);
+    // 下位4bit=種別、上位4bit=色バリエーション（OSM id 由来。建物単位で一貫）
+    const h = buildingHeight(w.t), bt = buildingType(w.t) | (variantOf(w.el.id) << 4);
     fillPolygon(w.g.rings, W, H, (i, j) => { const k = j * W + i; bld[k] = h; bldtype[k] = bt; });
   }
   stats.buildings = blds.length;

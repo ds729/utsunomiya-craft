@@ -3,6 +3,7 @@
 //   x,z: 中心のローカル座標[m]、r: 半径[m]、scale: 1m あたりのピクセル数
 //   highlight: 指定した name を含む道路・線路の way を OSM 生データから探して色付きで重ねる
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import { PATHS } from './config.mjs';
 import { encodePNG } from './lib/png.mjs';
 import { makeProjection } from './lib/geo.mjs';
@@ -11,7 +12,7 @@ import { strokePolyline } from './lib/raster.mjs';
 const args = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, '').split('=')));
 const world = JSON.parse(fs.readFileSync(`${PATHS.worldDir}/world.json`, 'utf8'));
 const W = world.size.x, H = world.size.z, { west, north } = world.extent;
-const read = (n) => new Uint8Array(fs.readFileSync(`${PATHS.worldDir}/${n}.bin`));
+const read = (n) => new Uint8Array(zlib.gunzipSync(fs.readFileSync(`${PATHS.worldDir}/${n}.bin.gz`)));
 const ground = read('ground'), bld = read('bld'), bldtype = read('bldtype'), deck = read('deck');
 
 const GROUND_RGB = {
@@ -44,7 +45,7 @@ for (let py = 0; py < S; py++) {
     if (bld[k]) {
       // 建物: 種別色を高さで暗く（高いほど濃い）
       const f = 1 - Math.min(bld[k], 60) / 100;
-      c = bColor[bldtype[k]].map((v) => v * f);
+      c = bColor[bldtype[k] & 15].map((v) => v * f);
     } else c = gColor[ground[k]];
     // 高架床板は斜線で重ねる（下の建物・地表が見えるように）
     if (deck[k] && (((Math.floor(x) + Math.floor(z)) % 4) + 4) % 4 < 2) c = deck[k] >= 12 ? [200, 0, 255] : [255, 60, 200];

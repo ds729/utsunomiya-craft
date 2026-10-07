@@ -1,0 +1,9 @@
+{
+  "name": "utsunomiya-craft",
+  "private": true,
+  "type": "module",
+  "description": "依存なし。public/src/*.js を node --test から ES Modules として読むためだけの設定",
+  "scripts": {
+    "test": "node --test"
+  }
+}
