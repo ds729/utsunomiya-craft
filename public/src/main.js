@@ -142,7 +142,11 @@ async function main() {
     }
 
     // 初回生成が終わるまでは物理を止める（足場ができる前に落ちない）
-    if (ready) stepPlayer(player, controls.active ? controls.input() : { yaw: controls.yaw }, dt, solid, water);
+    const input = controls.active ? controls.input() : { yaw: controls.yaw };
+    if (ready) stepPlayer(player, input, dt, solid, water);
+    // ダッシュ中は視野角を少し広げて速さを感じやすくする
+    const fov = input.sprint && input.forward > 0 && !player.inWater ? 84 : 75;
+    if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 10); camera.updateProjectionMatrix(); }
 
     camera.position.set(player.x, player.y + PLAYER.EYE, player.z);
     camera.rotation.set(controls.pitch, controls.yaw, 0);

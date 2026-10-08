@@ -3,7 +3,7 @@
 
 export const PLAYER = { W: 0.6, H: 1.8, EYE: 1.62 };
 export const PHYS = {
-  WALK: 4.3, SPRINT: 5.6, FLY: 10.8, SWIM: 2.2,
+  WALK: 4.3, SPRINT: 8.0, FLY: 10.8, SWIM: 2.2,
   GRAVITY: 32, JUMP_V: 9, TERMINAL: 40,
   WATER_GRAVITY: 8, SWIM_UP: 3,
   FLY_V: 8,

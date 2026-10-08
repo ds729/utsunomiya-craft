@@ -28,7 +28,7 @@ test('壁で止まる（東へ歩き続けても x < 5-0.3）', () => {
   assert.ok(p.x <= 5 - PLAYER.W / 2 && p.x > 4.5, `x=${p.x}`);
 });
 
-test('歩行速度 4.3m/s、ダッシュ 5.6m/s、向き（yaw=0 は北 = -z）', () => {
+test('歩行速度 4.3m/s、ダッシュ 8.0m/s、向き（yaw=0 は北 = -z）', () => {
   const p = run(createPlayer(0.5, 1, 0.5), { forward: 1, yaw: 0 }, 1);
   assert.ok(Math.abs(p.z - (0.5 - PHYS.WALK)) < 0.1, `z=${p.z}`);
   const q = run(createPlayer(0.5, 1, 0.5), { forward: 1, yaw: headingToYaw(180), sprint: true }, 1);

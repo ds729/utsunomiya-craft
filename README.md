@@ -13,7 +13,7 @@ python3 -m http.server 8000 -d public
 | 操作 | キー |
 |---|---|
 | 移動 | W A S D（矢印キーも可） |
-| ダッシュ | Shift |
+| ダッシュ | Shift（8m/s。歩行は4.3m/s） |
 | ジャンプ | Space（1段の段差を登れる） |
 | フライ切替 | Space を素早く2回（フライ中は Space 上昇／Shift 下降） |
 | 描画距離 | `[` `]`（URL の `?view=8` でも指定、2〜16チャンク） |
