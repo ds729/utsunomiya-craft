@@ -170,10 +170,15 @@ export function buildWorld(osm, extent) {
   // 6. 建物: 外形 → building:part（高さ違いで上書き）
   const blds = ways.filter((w) => w.g.rings && w.t.building && w.t.building !== 'no' && !w.t['building:part']);
   const parts = ways.filter((w) => w.g.rings && w.t['building:part'] && w.t['building:part'] !== 'no');
+  // owner: セルを塗った OSM 建物の番号（PLATEAU との対応付け用。building:part は外形の番号を保つ）
+  const owner = new Int32Array(W * H).fill(-1);
+  let nextOwner = 0;
   for (const w of [...blds, ...parts]) {
+    const isPart = !!w.t['building:part'];
+    const id = nextOwner++;
     // 下位4bit=種別、上位4bit=色バリエーション（OSM id 由来。建物単位で一貫）
     const h = buildingHeight(w.t), bt = buildingType(w.t) | (variantOf(w.el.id) << 4);
-    fillPolygon(w.g.rings, W, H, (i, j) => { const k = j * W + i; bld[k] = h; bldtype[k] = bt; });
+    fillPolygon(w.g.rings, W, H, (i, j) => { const k = j * W + i; bld[k] = h; bldtype[k] = bt; if (!isPart || owner[k] < 0) owner[k] = id; });
   }
   stats.buildings = blds.length;
   stats.buildingParts = parts.length;
@@ -198,5 +203,5 @@ export function buildWorld(osm, extent) {
     pois.push({ name: t.name, kind, x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10 });
   }
 
-  return { W, H, ground, bld, bldtype, deck, pois, stats };
+  return { W, H, ground, bld, bldtype, deck, owner, pois, stats, toGrid };
 }

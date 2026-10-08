@@ -2,13 +2,26 @@
 // 使い方: node tools/build-world.mjs
 import fs from 'node:fs';
 import zlib from 'node:zlib';
-import { EXTENT, MAX_H, PATHS, SPAWN_POI_NAME } from './config.mjs';
+import { EXTENT, MAX_H, PATHS, SPAWN_POI_NAME, PLATEAU } from './config.mjs';
 import { buildWorld } from './lib/world.mjs';
+import { parseBuildings, applyPlateau } from './lib/plateau.mjs';
 import { MAT_NAMES, BTYPE_NAMES } from './lib/tags.mjs';
 
 const t0 = performance.now();
 const osm = JSON.parse(fs.readFileSync(PATHS.osm, 'utf8'));
 const w = buildWorld(osm, EXTENT);
+
+// --plateau: PLATEAU（data/raw/plateau/*.gml）の建物高さを OSM より優先して取り込む
+const usePlateau = process.argv.includes('--plateau');
+let plateauStats = null;
+if (usePlateau) {
+  const files = fs.readdirSync(PATHS.plateauDir).filter((f) => f.endsWith('.gml'));
+  if (!files.length) throw new Error(`${PATHS.plateauDir} に gml がありません。node tools/fetch-plateau.mjs を先に実行してください`);
+  const blds = [];
+  for (const f of files) blds.push(...parseBuildings(fs.readFileSync(`${PATHS.plateauDir}/${f}`, 'utf8')));
+  plateauStats = applyPlateau(w, blds, ([lat, lon]) => w.toGrid({ lat, lon }), w.owner);
+  console.log('PLATEAU', plateauStats);
+}
 fs.mkdirSync(PATHS.worldDir, { recursive: true });
 // 配信は gzip（ブラウザの DecompressionStream で展開）。生 .bin は残さない
 const FILES = ['ground', 'bld', 'bldtype', 'deck'];
@@ -41,7 +54,9 @@ const world = {
   buildingTypes: BTYPE_NAMES,
   pois: w.pois,
   osmFetchedAt: osm.fetchedAt,
-  attribution: ['© OpenStreetMap contributors (ODbL)'],
+  heightSource: usePlateau ? 'PLATEAU 2023 (measuredHeight) > OSM' : 'OSM',
+  plateau: plateauStats,
+  attribution: ['© OpenStreetMap contributors (ODbL)', ...(usePlateau ? [PLATEAU.attribution] : [])],
 };
 fs.writeFileSync(`${PATHS.worldDir}/world.json`, JSON.stringify(world));
 

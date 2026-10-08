@@ -28,10 +28,19 @@ export const SPAWN_POI_NAME = '宇都宮駅東口';
 export const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 export const USER_AGENT = 'utsunomiya-craft/0.1 (personal, non-commercial)';
 
+// PLATEAU 3D都市モデル 宇都宮市 2023年度版 CityGML（G空間情報センター、zip 約977MB）。
+// 全体は落とさず、HTTP Range で範囲内の建物ファイル（3次メッシュ単位）だけを取り出す
+export const PLATEAU = {
+  dataset: 'https://www.geospatial.jp/ckan/dataset/plateau-09201-utsunomiya-shi-2023',
+  zipUrl: 'https://assets.cms.plateau.reearth.io/assets/f8/3a8d50-57c9-4b5b-a700-a5ca80230c8a/09201_utsunomiya-shi_city_2023_citygml_2_op.zip',
+  attribution: '3D都市モデル（Project PLATEAU）国土交通省',
+};
+
 export const PATHS = {
   rawDir: 'data/raw',
   station: 'data/raw/station.json',
   osm: 'data/raw/osm.json',
   worldDir: 'public/world',
   previewDir: 'data/preview',
+  plateauDir: 'data/raw/plateau',
 };
