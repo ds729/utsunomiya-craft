@@ -132,3 +132,21 @@ test('線路の模様は東西に続くとき 90° 回す', () => {
   assert.ok(ns0 < ns1, '南北の線路は通常の向き');
   assert.equal(ew0, ew1, '東西の線路は回転（c0 と c1 の u が同じ）');
 });
+
+test('ChunkManager.rebuild: 読み込み済みのチャンクだけ作り直し、頂点数の集計を更新する', async () => {
+  const { ChunkManager } = await import('../public/src/chunks.js');
+  const { EditStore } = await import('../public/src/edits.js');
+  const { makeWorld } = await import('../public/src/world-data.js');
+  const base = makeTestWorld(64);
+  const w = makeWorld(base.meta, base, new EditStore());
+  const made = [], disposed = [];
+  const m = new ChunkManager(w, { viewDist: 2, makeMesh: (x) => (made.push(x), x), disposeMesh: (x) => disposed.push(x) });
+  while (m.update(0, 0, 1000) > 0);
+  const v0 = m.stats.vertices;
+  w.edits.set(3, 1, 3, B.STONE);
+  assert.equal(m.rebuild(0, 0), true);
+  assert.equal(disposed.length, 1);
+  // 石1個: 上面と側面4つの5面が増え、下の地面の上面1つが隠れる → +4面 = +16頂点
+  assert.equal(m.stats.vertices, v0 + 16);
+  assert.equal(m.rebuild(50, 50), false);
+});

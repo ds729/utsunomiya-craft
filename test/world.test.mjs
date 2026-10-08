@@ -71,3 +71,20 @@ test('buildWorld: 車道・線路を越えない道路の橋（川の橋）は�
   assert.equal(w.deck[cell(w, 20, -10)], 6, '車道を越える歩道橋は床板');
   assert.equal(w.stats.bridgesAtGrade, 1);
 });
+
+test('findTeleports: 名称・タグ条件で探し、way は頂点の平均、範囲外は除く', async () => {
+  const { findTeleports } = await import('../tools/lib/teleports.mjs');
+  const els = [
+    { type: 'node', lat: 0, lon: 0, tags: { name: 'A駅', railway: 'tram_stop' } },
+    { type: 'node', lat: 0, lon: 0, tags: { name: 'A駅', highway: 'bus_stop' } },
+    { type: 'way', geometry: [{ lat: 10, lon: 0 }, { lat: 20, lon: 0 }], tags: { name: 'B通り', highway: 'primary' } },
+    { type: 'node', lat: 500, lon: 0, tags: { name: 'C' } },
+  ];
+  const defs = [
+    { label: 'A', name: 'A駅', filter: (t) => t.railway === 'tram_stop' },
+    { label: 'B', name: 'B通り', filter: (t) => t.highway },
+    { label: 'C', name: 'C' },
+  ];
+  const r = findTeleports(els, (lat, lon) => ({ x: lon, z: lat }), (x, z) => Math.abs(z) < 100, defs);
+  assert.deepEqual(r, [{ label: 'A', x: 0, z: 0 }, { label: 'B', x: 0, z: 15 }]);
+});

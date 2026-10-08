@@ -65,6 +65,18 @@ export class ChunkManager {
     return this.queue.length;
   }
 
+  // 編集後の作り直し（読み込み済みのチャンクだけ。未読み込みなら後で差分込みで作られる）
+  rebuild(cx, cz) {
+    const k = `${cx},${cz}`;
+    const c = this.loaded.get(k);
+    if (!c) return false;
+    this.disposeMesh(c.handle);
+    this.stats.vertices -= c.vertexCount;
+    this.loaded.delete(k);
+    this.build(cx, cz);
+    return true;
+  }
+
   build(cx, cz) {
     const t = this.now();
     const mesh = meshChunk(generatePadded(this.world, cx, cz));

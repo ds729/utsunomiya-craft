@@ -1,26 +1,44 @@
-// エントリポイント: three.js の描画・ループ・デバッグAPI
+// エントリポイント: three.js の描画・ループ・UI・デバッグAPI
 import * as THREE from 'three';
-import { loadWorld, isSolidAt, isWaterAt } from './world-data.js';
+import { loadWorld, isSolidAt, isWaterAt, blockAt, cellIndex, Y_MIN, Y_MAX } from './world-data.js';
 import { ChunkManager } from './chunks.js';
 import { createAtlasCanvas } from './atlas.js';
-import { createPlayer, stepPlayer, PLAYER } from './physics.js';
+import { createPlayer, stepPlayer, collides, PLAYER } from './physics.js';
 import { findSpawn } from './spawn.js';
-import { headingToYaw } from './geo.js';
+import { headingToYaw, yawToHeading } from './geo.js';
 import { Controls } from './player.js';
 import { Hud } from './hud.js';
+import { EditStore, raycast, affectedChunks, breakAt, placeAt } from './edits.js';
+import { openEditStorage } from './storage.js';
+import { B, BLOCKS, HOTBAR, UNBREAKABLE } from './blocks.js';
+import { Minimap } from './minimap.js';
+import { skyAt, hoursAt, formatTime } from './daynight.js';
+import { TouchControls, isTouchDevice } from './touch.js';
+import { ATLAS_COLS } from './chunk.js';
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.get('debug') === '1';
 const VIEW_DIST = Math.max(2, Math.min(16, Number(params.get('view')) || 8));
+const START_HOURS = params.has('time') ? Number(params.get('time')) : 10;
 const INITIAL_BUDGET_MS = 40; // 初回ロード中は 1 フレームあたり多めに作る
 const FRAME_BUDGET_MS = 6;
+const REACH = 6; // 壊す・置くの届く距離[m]
 
-const statusEl = document.getElementById('status');
-const progressEl = document.querySelector('#progress div');
-const overlay = document.getElementById('overlay');
+const $ = (id) => document.getElementById(id);
+const statusEl = $('status'), progressEl = document.querySelector('#progress div'), overlay = $('overlay'), startBtn = $('start');
 
 async function main() {
-  const world = await loadWorld(new URL('./world/', document.baseURI), (f) => { progressEl.style.width = `${f * 30}%`; });
+  const [world, storage] = await Promise.all([
+    loadWorld(new URL('./world/', document.baseURI), (f) => { progressEl.style.width = `${f * 30}%`; }),
+    openEditStorage(),
+  ]);
+  // 保存済みの編集差分を読む
+  world.edits = new EditStore();
+  for (const { key, entries } of await storage.loadAll()) {
+    const [cx, cz] = key.split(',').map(Number);
+    world.edits.load(cx, cz, entries);
+  }
+  $('license').textContent = world.meta.attribution.map((a) => a.replace(' (ODbL)', '')).join(' ／ ');
 
   // --- 描画の準備 ---
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
@@ -29,21 +47,22 @@ async function main() {
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // 頂点カラーの陰影をそのまま出す
   document.body.prepend(renderer.domElement);
 
-  const SKY_TOP = new THREE.Color(0.36, 0.58, 0.88), SKY_HORIZON = new THREE.Color(0.74, 0.85, 0.95);
   const scene = new THREE.Scene();
-  scene.background = SKY_HORIZON;
+  const horizon = new THREE.Color(), zenith = new THREE.Color();
+  scene.background = horizon;
   const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.rotation.order = 'YXZ';
 
-  const atlas = new THREE.CanvasTexture(createAtlasCanvas());
+  const atlasCanvas = createAtlasCanvas();
+  const atlas = new THREE.CanvasTexture(atlasCanvas);
   atlas.magFilter = THREE.NearestFilter;
   atlas.minFilter = THREE.NearestFilter;
   atlas.generateMipmaps = false;
   atlas.colorSpace = THREE.NoColorSpace;
-  const material = new THREE.MeshBasicMaterial({ map: atlas, vertexColors: true });
+  // alphaTest: ガラスの透明部分を抜く
+  const material = new THREE.MeshBasicMaterial({ map: atlas, vertexColors: true, alphaTest: 0.5 });
 
-  // グラデーションの空（カメラに追従する球）
-  const sky = makeSky(SKY_TOP, SKY_HORIZON);
+  const sky = makeSky();
   scene.add(sky);
 
   const chunks = new ChunkManager(world, {
@@ -69,7 +88,7 @@ async function main() {
 
   function applyViewDist() {
     const far = chunks.viewDist * 16;
-    scene.fog = new THREE.Fog(SKY_HORIZON, far * 0.45, far * 0.95);
+    scene.fog = new THREE.Fog(horizon, far * 0.45, far * 0.95);
     camera.far = far * 1.2;
     camera.updateProjectionMatrix();
     sky.scale.setScalar(far * 1.1);
@@ -84,43 +103,135 @@ async function main() {
   const player = createPlayer(spawn.x, spawn.y, spawn.z);
   const controls = new Controls(renderer.domElement, player);
   controls.yaw = headingToYaw(270); // 東口から駅（西）を向く
+  const hud = new Hud(world.meta);
+  const minimap = new Minimap(world, $('minimap'));
+  let ready = false;
+  const stats = { ...chunks.stats, frameMs: 0, fps: 0, loadMs: 0, viewDist: chunks.viewDist, edits: world.edits.size };
+
+  function teleport(x, z, heading = null, opts = {}) {
+    if (opts.y != null) {
+      Object.assign(player, { x, z, y: opts.y, vx: 0, vy: 0, vz: 0, flying: true });
+    } else {
+      const s = findSpawn(world, x, z, 100) || { x, y: 1, z };
+      Object.assign(player, { x: s.x, y: s.y, z: s.z, vx: 0, vy: 0, vz: 0, flying: false });
+    }
+    if (heading != null) controls.yaw = headingToYaw(heading);
+    if (opts.pitch != null) controls.pitch = (opts.pitch * Math.PI) / 180;
+    stats.pending = chunks.update(player.x, player.z, 0); // 待ちチャンク数をすぐ更新
+    return { x: player.x, y: player.y, z: player.z };
+  }
+
+  // --- ブロック編集 ---
+  let slot = 0;
+  const hotbarEl = $('hotbar');
+  HOTBAR.forEach((h, i) => {
+    const d = document.createElement('div');
+    d.innerHTML = `<span>${i + 1}</span>`;
+    d.style.backgroundImage = `url(${tileDataURL(atlasCanvas, h.id === B.GRASS ? BLOCKS[h.id].side : BLOCKS[h.id].top)})`;
+    d.title = h.name;
+    d.addEventListener('click', () => selectSlot(i));
+    hotbarEl.appendChild(d);
+  });
+  function selectSlot(i) {
+    slot = (i + HOTBAR.length) % HOTBAR.length;
+    [...hotbarEl.children].forEach((c, k) => c.classList.toggle('sel', k === slot));
+    $('blockname').textContent = HOTBAR[slot].name;
+  }
+  selectSlot(0);
+
+  const highlight = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(1.004, 1.004, 1.004)),
+    new THREE.LineBasicMaterial({ color: 0x111111, fog: false }),
+  );
+  highlight.visible = false;
+  scene.add(highlight);
+
+  const isTarget = (x, y, z) => { const id = blockAt(world, x, y, z); return id !== B.AIR && id !== B.WATER; };
+  function currentHit() {
+    const eye = [player.x, player.y + PLAYER.EYE, player.z];
+    const cp = Math.cos(controls.pitch);
+    const dir = [-Math.sin(controls.yaw) * cp, Math.sin(controls.pitch), -Math.cos(controls.yaw) * cp];
+    return raycast(eye, dir, REACH, isTarget);
+  }
+  const saveTimers = new Map();
+  function afterEdit(pos) {
+    if (!pos) return false;
+    for (const [cx, cz] of affectedChunks(pos[0], pos[2])) chunks.rebuild(cx, cz);
+    // チャンク単位で少し待ってまとめて保存
+    const cx = Math.floor(pos[0] / 16), cz = Math.floor(pos[2] / 16), key = `${cx},${cz}`;
+    clearTimeout(saveTimers.get(key));
+    saveTimers.set(key, setTimeout(() => { saveTimers.delete(key); storage.save(key, world.edits.serialize(cx, cz)); }, 300));
+    return true;
+  }
+  const editDeps = {
+    blockAt, cellIndex, yMin: Y_MIN, yMax: Y_MAX, unbreakable: UNBREAKABLE,
+    isReplaceable: (id) => id === B.AIR || id === B.WATER,
+    overlapsPlayer: (x, y, z) => collides(player.x, player.y, player.z, (a, b, c) => a === x && b === y && c === z),
+  };
+  function act(kind) {
+    const hit = currentHit();
+    return afterEdit(kind === 'break' ? breakAt(world, hit, editDeps) : placeAt(world, hit, HOTBAR[slot].id, editDeps));
+  }
+  controls.onAction = (kind) => kind && act(kind);
+  controls.onWheel = (d) => selectSlot(slot + d);
+
   controls.onKey = (code) => {
     if (code === 'BracketLeft' || code === 'BracketRight') {
       chunks.setViewDist(chunks.viewDist + (code === 'BracketRight' ? 1 : -1));
       applyViewDist();
-    }
+    } else if (code.startsWith('Digit') && code !== 'Digit0') selectSlot(Number(code.slice(5)) - 1);
+    else if (code === 'KeyM') minimap.toggle();
+    else if (code === 'KeyT') controls.setActive(false); // 一時停止メニュー（テレポート一覧）
   };
-  const hud = new Hud(world.meta);
 
-  // --- 初回チャンク生成（進捗表示）---
-  let ready = false;
-  const stats = { ...chunks.stats, frameMs: 0, fps: 0, loadMs: 0, viewDist: chunks.viewDist };
-  overlay.addEventListener('click', () => { if (ready) controls.start(); });
-  controls.onActiveChange = (active) => overlay.classList.toggle('hidden', active || DEBUG);
+  // --- 一時停止メニュー（開始・テレポート・編集リセット）---
+  const touch = isTouchDevice() ? new TouchControls(document.body, controls, { onBreak: () => act('break'), onPlace: () => act('place') }) : null;
+  const resume = () => controls.start({ lock: !touch });
+  for (const t of world.meta.teleports || []) {
+    const b = document.createElement('button');
+    b.textContent = t.label;
+    b.addEventListener('click', () => { teleport(t.x, t.z); resume(); });
+    $('tp-list').appendChild(b);
+  }
+  startBtn.addEventListener('click', () => { if (ready) resume(); });
+  $('btn-menu').addEventListener('click', () => controls.setActive(false));
+  const updateEditCount = () => { $('edit-count').textContent = `編集 ${world.edits.size} ブロック${storage.available ? '' : '（この環境では保存されません）'}`; };
+  $('reset-edits').addEventListener('click', async () => {
+    if (!confirm('ブロックの編集をすべて元に戻します。よろしいですか？')) return;
+    const keys = [...world.edits.chunks.keys()];
+    world.edits.clear();
+    await storage.clear();
+    for (const k of keys) {
+      const [cx, cz] = k.split(',').map(Number);
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) chunks.rebuild(cx + dx, cz + dz);
+    }
+    updateEditCount();
+  });
+  controls.onActiveChange = (active) => {
+    overlay.classList.toggle('hidden', active);
+    if (!active) updateEditCount();
+  };
 
   // --- デバッグ API ---
+  let timeOffset = 0;
   if (DEBUG) {
     window.__ready = false;
     window.__stats = stats;
     // yaw は方位[度]（北=0、東=90）。opts: { y: 足元の高さ（指定するとフライで空中に置く）, pitch: 度 }
-    window.__teleport = (x, z, yaw = 0, opts = {}) => {
-      if (opts.y != null) {
-        Object.assign(player, { x, z, y: opts.y, vx: 0, vy: 0, vz: 0, flying: true });
-      } else {
-        const s = findSpawn(world, x, z, 100) || { x, y: 1, z };
-        Object.assign(player, { x: s.x, y: s.y, z: s.z, vx: 0, vy: 0, vz: 0, flying: false });
-      }
-      controls.yaw = headingToYaw(yaw);
-      controls.pitch = ((opts.pitch || 0) * Math.PI) / 180;
-      // 待ちチャンク数をすぐ更新する（撮影側が古い pending=0 を見て先に進まないように）
-      stats.pending = chunks.update(player.x, player.z, 0);
-      return { x: player.x, y: player.y, z: player.z };
-    };
+    window.__teleport = (x, z, yaw = 0, opts = {}) => teleport(x, z, yaw, { pitch: opts.pitch || 0, y: opts.y ?? undefined });
     window.__player = player;
+    window.__act = (kind, s) => { if (s != null) selectSlot(s); return act(kind); };
+    window.__setTime = (h) => { timeOffset = h - hoursAt(performance.now() / 1000, START_HOURS); };
+    window.__toggleMap = () => minimap.toggle();
+    window.__pause = () => { controls.setActive(false); overlay.classList.remove('hidden'); updateEditCount(); };
+    window.__flushSaves = () => Promise.all([...world.edits.chunks.keys()].map((k) => {
+      const [cx, cz] = k.split(',').map(Number);
+      return storage.save(k, world.edits.serialize(cx, cz));
+    }));
   }
 
   // --- ループ ---
-  let last = performance.now(), fpsFrames = 0, fpsTime = last, fps = 0;
+  let last = performance.now(), fpsFrames = 0, fpsTime = last, fps = 0, skyTime = -1;
   function frame(now) {
     requestAnimationFrame(frame);
     const dt = Math.min((now - last) / 1000, 0.1);
@@ -135,14 +246,19 @@ async function main() {
       if (pending === 0) {
         ready = true;
         stats.loadMs = Math.round(performance.now()); // ナビゲーション開始からの時間
-        statusEl.textContent = 'クリックで開始';
+        statusEl.textContent = '';
         progressEl.parentElement.style.display = 'none';
+        startBtn.disabled = false;
+        startBtn.textContent = 'クリックで開始';
+        overlay.classList.add('ready');
+        updateEditCount();
         if (DEBUG) { window.__ready = true; overlay.classList.add('hidden'); }
       }
     }
 
+    let input = controls.active ? controls.input() : { yaw: controls.yaw };
+    if (touch && controls.active) input = touch.apply(input);
     // 初回生成が終わるまでは物理を止める（足場ができる前に落ちない）
-    const input = controls.active ? controls.input() : { yaw: controls.yaw };
     if (ready) stepPlayer(player, input, dt, solid, water);
     // ダッシュ中は視野角を少し広げて速さを感じやすくする
     const fov = input.sprint && input.forward > 0 && !player.inWater ? 84 : 75;
@@ -151,14 +267,35 @@ async function main() {
     camera.position.set(player.x, player.y + PLAYER.EYE, player.z);
     camera.rotation.set(controls.pitch, controls.yaw, 0);
     sky.position.copy(camera.position);
+
+    // 昼夜（空・フォグ・明るさ）。0.25 秒ごとに更新
+    const hours = (hoursAt(now / 1000, START_HOURS) + timeOffset + 48) % 24;
+    if (now - skyTime > 250) {
+      skyTime = now;
+      const s = skyAt(hours);
+      horizon.setRGB(...s.horizon);
+      scene.fog.color.copy(horizon); // Fog は色をコピーして持つので毎回反映する
+      zenith.setRGB(...s.top);
+      paintSky(sky, zenith, horizon);
+      material.color.setScalar(s.light);
+      stats.hours = hours;
+    }
+
+    // 狙っているブロックの枠
+    const hit = ready && (controls.active || DEBUG) ? currentHit() : null;
+    highlight.visible = !!hit;
+    if (hit) highlight.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+
     renderer.render(scene, camera);
 
     fpsFrames++;
     if (now - fpsTime > 500) { fps = Math.round((fpsFrames * 1000) / (now - fpsTime)); fpsFrames = 0; fpsTime = now; }
     const cpuMs = performance.now() - cpu0;
     stats.frameMs = stats.frameMs ? stats.frameMs * 0.9 + cpuMs * 0.1 : cpuMs;
-    Object.assign(stats, chunks.stats, { fps, viewDist: chunks.viewDist, drawCalls: renderer.info.render.calls });
+    Object.assign(stats, chunks.stats, { fps, viewDist: chunks.viewDist, drawCalls: renderer.info.render.calls, edits: world.edits.size, slot });
     hud.update(player, controls.yaw, fps, DEBUG ? `chunks ${stats.chunks} (待ち ${stats.pending}) 頂点 ${stats.vertices} 生成 ${stats.avgChunkMs.toFixed(1)}ms/chunk` : '', now);
+    $('clock').textContent = formatTime(hours);
+    minimap.draw(player, yawToHeading(controls.yaw), world.meta.teleports);
   }
   requestAnimationFrame(frame);
 
@@ -166,29 +303,41 @@ async function main() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    minimap.layout();
   });
 }
 
-function makeSky(top, horizon) {
+// アトラスの 1 タイルを data URL に（ホットバーのアイコン）
+function tileDataURL(atlas, tile) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 16;
+  c.getContext('2d').drawImage(atlas, (tile % ATLAS_COLS) * 16, Math.floor(tile / ATLAS_COLS) * 16, 16, 16, 0, 0, 16, 16);
+  return c.toDataURL();
+}
+
+// グラデーションの空（カメラに追従する球）。色は paintSky で更新
+function makeSky() {
   const g = new THREE.SphereGeometry(1, 24, 12);
-  const pos = g.attributes.position;
-  const colors = new Float32Array(pos.count * 3);
-  const c = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    const t = Math.max(0, pos.getY(i)); // 地平線(0)→天頂(1)
-    c.copy(horizon).lerp(top, Math.pow(t, 0.6));
-    c.toArray(colors, i * 3);
-  }
-  g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3), 3));
   const m = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false });
   const sky = new THREE.Mesh(g, m);
   sky.renderOrder = -1;
   sky.frustumCulled = false;
   return sky;
 }
+const tmpColor = new THREE.Color();
+function paintSky(sky, zenith, horizon) {
+  const pos = sky.geometry.attributes.position, col = sky.geometry.attributes.color;
+  for (let i = 0; i < pos.count; i++) {
+    const t = Math.max(0, pos.getY(i)); // 地平線(0)→天頂(1)
+    tmpColor.copy(horizon).lerp(zenith, Math.pow(t, 0.6));
+    col.setXYZ(i, tmpColor.r, tmpColor.g, tmpColor.b);
+  }
+  col.needsUpdate = true;
+}
 
 main().catch((e) => {
   console.error(e);
   statusEl.innerHTML = `<span id="error">読み込みに失敗しました: ${e.message}</span>`;
-  if (DEBUG) window.__error = String(e && e.stack || e);
+  if (DEBUG) window.__error = String((e && e.stack) || e);
 });

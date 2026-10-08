@@ -1,8 +1,8 @@
 // チャンク生成（ラスタ → ボクセル配列）と面カリング付きメッシュ化。three.js・DOM に依存しない純関数
 import { BLOCKS, OPAQUE, B, TILE_NAMES, buildingColor } from './blocks.js';
-import { Y_MIN, CHUNK_H, cellIndex, fillColumn } from './world-data.js';
+import { Y_MIN, CHUNK_H, CS, cellIndex, fillColumn } from './world-data.js';
 
-export const CS = 16;          // チャンクの x,z サイズ
+export { CS };
 export const P = CS + 2;       // 隣接 1 列ぶんの余白を含めたサイズ
 
 // チャンク (cx, cz) と周囲 1 列を含む 18×18×CHUNK_H のブロック配列を作る。
@@ -19,6 +19,19 @@ export function generatePadded(w, cx, cz) {
       const col = pz * P + px;
       tints[col] = w.bldtype[k];
       fillColumn(w, k, (by, id) => { blocks[(by - Y_MIN) * P * P + col] = id; });
+    }
+  }
+  // 編集差分を重ねる（自チャンクと、余白にかかる周囲8チャンク）
+  if (w.edits) {
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const m = w.edits.chunk(cx + dx, cz + dz);
+      if (!m) continue;
+      for (const [idx, id] of m) {
+        const lx = idx % CS, lz = Math.floor(idx / CS) % CS, yi = Math.floor(idx / (CS * CS));
+        const px = (cx + dx) * CS + lx - x0, pz = (cz + dz) * CS + lz - z0;
+        if (px < 0 || pz < 0 || px >= P || pz >= P || cellIndex(w, x0 + px, z0 + pz) < 0) continue;
+        blocks[yi * P * P + pz * P + px] = id;
+      }
     }
   }
   return { cx, cz, blocks, tints };

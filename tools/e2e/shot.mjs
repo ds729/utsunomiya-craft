@@ -3,6 +3,8 @@
 //   yaw は方位[度]（北=0、東=90）。x,z 省略時はスポーン地点
 //   --url=http://localhost:8000/ を付けると内蔵サーバではなく既存のサーバ（python3 -m http.server 等）を開く
 //   --base を付けると public の親ディレクトリを配信し、サブパス（GitHub Pages 相当）で開く
+//   Phase 2 の確認用: --time=20（時刻）--map（全体地図）--pause（一時停止メニュー）--touch（スマホ相当の画面・タッチ）
+//   --act=break,place:6,...（狙っているブロックを壊す/ホットバー番号のブロックを置く）--reload（撮影前に再読み込みして保存を確認）
 // 出力: tools/e2e/shots/<name>.png と、標準出力に window.__stats の JSON
 import http from 'node:http';
 import fs from 'node:fs';
@@ -13,7 +15,7 @@ import { chromium } from 'playwright';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
 const [name = 'shot', ...rest] = process.argv.slice(2);
-const args = Object.fromEntries(rest.map((a) => a.replace(/^--/, '').split('=')));
+const args = Object.fromEntries(rest.map((a) => { const [k, ...v] = a.replace(/^--/, '').split('='); return [k, v.length ? v.join('=') : true]; }));
 
 // --- 静的サーバ（public/ もしくはサブパス確認用にリポジトリ直下を配信）---
 const sub = args.base ? `/${args.base.replace(/^\/|\/$/g, '')}/` : '/';
@@ -41,7 +43,9 @@ const browser = await chromium.launch({
   headless: true,
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
-const page = await browser.newPage({ viewport: { width: W, height: H } });
+const page = await browser.newPage(args.touch
+  ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 }
+  : { viewport: { width: W, height: H } });
 const logs = [];
 page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
@@ -67,6 +71,26 @@ try {
   }
   // 移動先のチャンクが揃うまで待つ
   await page.waitForFunction(() => window.__stats.pending === 0, null, { timeout: 180000 });
+  if (args.act) {
+    out.acts = [];
+    for (const a of args.act.split(',')) {
+      const [kind, s] = a.split(':');
+      out.acts.push(await page.evaluate(([k, sl]) => window.__act(k, sl), [kind, s != null ? +s - 1 : null]));
+    }
+    await page.evaluate(() => window.__flushSaves());
+  }
+  if (args.reload) {
+    const pos = await page.evaluate(() => ({ x: window.__player.x, y: window.__player.y, z: window.__player.z }));
+    await page.reload();
+    await page.waitForFunction(() => window.__ready === true || window.__error, null, { timeout: 180000 });
+    await page.evaluate(([p, yaw, pitch]) => window.__teleport(p.x, p.z, yaw, { y: p.y, pitch }), [pos, +(args.yaw ?? 0), +(args.pitch ?? 0)]);
+    await page.evaluate(() => { window.__player.flying = false; });
+    await page.waitForFunction(() => window.__stats.pending === 0, null, { timeout: 180000 });
+    out.reloaded = true;
+  }
+  if (args.time != null) await page.evaluate((h) => window.__setTime(h), +args.time);
+  if (args.map) await page.evaluate(() => window.__toggleMap());
+  if (args.pause) await page.evaluate(() => window.__pause());
   await page.waitForTimeout(500);
   fs.mkdirSync(path.join(here, 'shots'), { recursive: true });
   const file = path.join(here, 'shots', `${name}.png`);

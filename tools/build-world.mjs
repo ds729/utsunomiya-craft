@@ -5,6 +5,8 @@ import zlib from 'node:zlib';
 import { EXTENT, MAX_H, PATHS, SPAWN_POI_NAME, PLATEAU } from './config.mjs';
 import { buildWorld } from './lib/world.mjs';
 import { parseBuildings, applyPlateau } from './lib/plateau.mjs';
+import { findTeleports } from './lib/teleports.mjs';
+import { makeProjection } from './lib/geo.mjs';
 import { MAT_NAMES, BTYPE_NAMES } from './lib/tags.mjs';
 
 const t0 = performance.now();
@@ -38,6 +40,12 @@ const spawnTarget = east.length
   ? { x: Math.round(east.reduce((a, p) => a + p.x, 0) / east.length), z: Math.round(east.reduce((a, p) => a + p.z, 0) / east.length), from: SPAWN_POI_NAME }
   : { x: 0, z: 0, from: 'origin' };
 
+// テレポート先（OSM の名称検索）
+const proj = makeProjection(osm.origin.lat, osm.origin.lon);
+const teleports = findTeleports(osm.elements, (lat, lon) => proj.toLocal(lat, lon),
+  (x, z) => x >= -EXTENT.west && x < EXTENT.east && z >= -EXTENT.north && z < EXTENT.south);
+console.log('テレポート先', teleports.map((t) => `${t.label}(${t.x},${t.z})`).join(' '));
+
 const world = {
   version: 1,
   origin: osm.origin,
@@ -50,6 +58,7 @@ const world = {
   encoding: 'gzip, Uint8 per cell',
   bldtypeFormat: 'low 4 bits = buildingTypes id, high 4 bits = color variant (hash of OSM id)',
   spawnTarget,
+  teleports,
   materials: MAT_NAMES,
   buildingTypes: BTYPE_NAMES,
   pois: w.pois,

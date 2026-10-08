@@ -18,7 +18,7 @@
   #compass::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 2px; height: 6px; margin-left: -1px; background: #fff; }
   #poi { left: 50%; top: 40px; transform: translateX(-50%); font-size: 18px; font-weight: 600; white-space: nowrap; }
   #info { left: 8px; top: 8px; line-height: 1.5; background: rgba(0,0,0,.35); padding: 4px 8px; border-radius: 4px; font-variant-numeric: tabular-nums; }
-  #license { right: 6px; bottom: 4px; font-size: 11px; background: rgba(0,0,0,.35); padding: 2px 6px; border-radius: 3px; }
+  #license { left: 6px; bottom: 4px; max-width: calc(50% - 250px); font-size: 11px; background: rgba(0,0,0,.35); padding: 2px 6px; border-radius: 3px; }
   #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20,30,45,.55); color: #fff; cursor: pointer; }
   #overlay .box { max-width: 420px; margin: 16px; padding: 20px 24px; background: rgba(0,0,0,.55); border-radius: 8px; line-height: 1.7; }
   #overlay h1 { margin: 0 0 8px; font-size: 22px; }
@@ -26,6 +26,54 @@
   #progress { height: 6px; background: rgba(255,255,255,.2); border-radius: 3px; margin-top: 12px; overflow: hidden; }
   #progress div { height: 100%; width: 0; background: #ffd34d; transition: width .1s; }
   #overlay.hidden { display: none; }
+  #overlay .box { max-height: calc(100vh - 32px); overflow-y: auto; cursor: default; }
+  #teleports { display: none; margin-top: 12px; }
+  #overlay.ready #teleports { display: block; }
+  #teleports h2 { font-size: 14px; margin: 0 0 6px; opacity: .8; }
+  #teleports button, .small-btn { font: inherit; font-size: 13px; color: #fff; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); border-radius: 4px; padding: 3px 8px; margin: 2px; cursor: pointer; }
+  #teleports button:hover, .small-btn:hover { background: rgba(255,211,77,.3); }
+  #start { display: block; width: 100%; margin-top: 12px; padding: 8px; font: inherit; font-size: 16px; font-weight: 600; color: #222; background: #ffd34d; border: 0; border-radius: 6px; cursor: pointer; }
+  #start[disabled] { opacity: .5; cursor: default; }
+  #hotbar { left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; gap: 4px; pointer-events: auto; }
+  #hotbar div { width: 44px; height: 44px; border: 2px solid rgba(255,255,255,.35); border-radius: 4px; background: rgba(0,0,0,.35) center / 30px 30px no-repeat; image-rendering: pixelated; position: relative; cursor: pointer; }
+  #hotbar div.sel { border-color: #ffd34d; box-shadow: 0 0 0 2px rgba(255,211,77,.5); }
+  #hotbar div span { position: absolute; left: 3px; top: 1px; font-size: 10px; }
+  #blockname { left: 50%; bottom: 64px; transform: translateX(-50%); font-size: 13px; }
+  #minimap { right: 8px; top: 8px; border: 2px solid rgba(255,255,255,.5); border-radius: 4px; image-rendering: pixelated; }
+  #minimap.large { right: 50%; top: 50%; transform: translate(50%, -50%); }
+  #clock { right: 8px; top: 186px; background: rgba(0,0,0,.35); padding: 1px 6px; border-radius: 3px; }
+  /* タッチ操作 */
+  .touch-ui { display: none; }
+  body.touch .touch-ui { display: block; }
+  #look { position: fixed; left: 40%; right: 0; top: 0; bottom: 0; touch-action: none; }
+  #stick { position: fixed; left: 24px; bottom: 80px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.15); border: 2px solid rgba(255,255,255,.35); touch-action: none; }
+  #stick div { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,.45); }
+  .tbtn { position: fixed; width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,.2); border: 2px solid rgba(255,255,255,.4); color: #fff; font-size: 13px; display: flex; align-items: center; justify-content: center; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .tbtn.on { background: rgba(255,211,77,.5); }
+  #btn-jump { right: 24px; bottom: 90px; }
+  #btn-down { right: 24px; bottom: 16px; width: 52px; height: 52px; }
+  #btn-break { right: 100px; bottom: 150px; }
+  #btn-place { right: 24px; bottom: 170px; }
+  #btn-menu { right: 186px; top: 8px; width: 44px; height: 44px; border-radius: 6px; }
+  body.touch #crosshair { display: block; }
+  /* 狭い画面（スマホ縦） */
+  @media (max-width: 600px) {
+    .hud { font-size: 11px; }
+    #info { line-height: 1.35; padding: 3px 6px; }
+    #compass { width: 150px; margin-left: -75px; top: 136px; }
+    #poi { top: 166px; font-size: 15px; }
+    #clock { top: 136px; }
+    #license { top: 84px; bottom: auto; max-width: 52%; font-size: 9px; }
+    #hotbar { bottom: 6px; gap: 3px; }
+    #hotbar div { width: 34px; height: 34px; background-size: 24px 24px; }
+    #blockname { bottom: 46px; }
+    #stick { bottom: 70px; left: 16px; }
+    #btn-down { bottom: 60px; right: 16px; }
+    #btn-jump { bottom: 124px; right: 16px; }
+    #btn-place { bottom: 200px; right: 16px; }
+    #btn-break { bottom: 170px; right: 92px; }
+    #btn-menu { top: 164px; right: 8px; }
+  }
   #error { color: #ffb3b3; }
 </style>
 <script type="importmap">
@@ -38,6 +86,19 @@
 <div id="poi" class="hud"></div>
 <div id="info" class="hud"></div>
 <div id="license" class="hud">© OpenStreetMap contributors</div>
+<canvas id="minimap" class="hud"></canvas>
+<div id="clock" class="hud"></div>
+<div id="blockname" class="hud"></div>
+<div id="hotbar" class="hud"></div>
+<div class="touch-ui">
+  <div id="look"></div>
+  <div id="stick"><div></div></div>
+  <div id="btn-jump" class="tbtn">ジャンプ</div>
+  <div id="btn-down" class="tbtn">下降</div>
+  <div id="btn-break" class="tbtn">壊す</div>
+  <div id="btn-place" class="tbtn">置く</div>
+  <div id="btn-menu" class="tbtn">≡</div>
+</div>
 <div id="overlay">
   <div class="box">
     <h1>Utsunomiya Craft</h1>
@@ -45,10 +106,16 @@
     <div style="margin-top:8px">
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移動　<kbd>Shift</kbd> ダッシュ　<kbd>Space</kbd> ジャンプ<br>
       <kbd>Space</kbd> 2回でフライ（<kbd>Space</kbd> 上昇／<kbd>Shift</kbd> 下降）<br>
-      <kbd>[</kbd> <kbd>]</kbd> 描画距離　<kbd>Esc</kbd> 一時停止（マウスを固定できない環境ではドラッグで視点）
+      左クリック 壊す　右クリック 置く　<kbd>1</kbd>〜<kbd>9</kbd>・ホイール ブロック選択<br>
+      <kbd>M</kbd> 地図　<kbd>T</kbd> テレポート　<kbd>[</kbd> <kbd>]</kbd> 描画距離　<kbd>Esc</kbd> 一時停止<br>
+      <span style="opacity:.8">マウスを固定できない環境ではドラッグで視点。スマホは画面のボタンで操作</span>
     </div>
-    <div id="status" style="margin-top:12px">読み込み中…</div>
+    <button id="start" disabled>読み込み中…</button>
+    <div id="status" style="margin-top:12px"></div>
     <div id="progress"><div></div></div>
+    <div id="teleports"><h2>テレポート</h2><div id="tp-list"></div>
+      <div style="margin-top:10px; font-size:12px; opacity:.85"><span id="edit-count"></span> <button id="reset-edits" class="small-btn">編集をすべて元に戻す</button></div>
+    </div>
   </div>
 </div>
 <script type="module" src="./src/main.js"></script>

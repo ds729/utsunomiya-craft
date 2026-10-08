@@ -4,17 +4,20 @@ import { B, GROUND_BLOCK, SOLID, MAT_WATER, MAT_PLATFORM } from './blocks.js';
 export const Y_MIN = -4;   // 岩盤
 export const Y_MAX = 96;   // 建物の上限（MAX_H）
 export const CHUNK_H = Y_MAX - Y_MIN + 1;
+export const CS = 16;     // チャンクの x,z サイズ
 const BT_SMALL = 8, BT_ROOF = 9; // world.json の buildingTypes
 const OVER_TRACK = new Set([1, 4, 9, 10, 14]); // 地表材質: dirt(landuse=railway), ballast, platform, tram, rail
 const OVER_TRACK_H = 6; // 線路上の建物の下の空き[m]
 
 // meta: world.json、rasters: { ground, bld, bldtype, deck }（Uint8Array, size.x*size.z）
-export function makeWorld(meta, rasters) {
+// edits: 編集差分（EditStore。なければ null）
+export function makeWorld(meta, rasters, edits = null) {
   return {
     meta,
     W: meta.size.x, H: meta.size.z,
     west: meta.extent.west, north: meta.extent.north,
-    ...rasters,
+    ground: rasters.ground, bld: rasters.bld, bldtype: rasters.bldtype, deck: rasters.deck,
+    edits,
   };
 }
 
@@ -63,6 +66,12 @@ export function blockAt(w, x, by, z) {
   if (by < Y_MIN || by > Y_MAX) return B.AIR;
   const k = cellIndex(w, x, z);
   if (k < 0) return B.AIR;
+  if (w.edits) { const e = w.edits.get(x, by, z); if (e !== undefined) return e; }
+  return baseBlockAt(w, k, by);
+}
+
+// 編集前の地形のブロック
+export function baseBlockAt(w, k, by) {
   let id = B.AIR;
   fillColumn(w, k, (y, b) => { if (y === by) id = b; });
   return id;

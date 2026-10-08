@@ -4,7 +4,7 @@
 export const TILE_NAMES = [
   'grass', 'dirt', 'bedrock', 'asphalt', 'sidewalk', 'ballast', 'water', 'park', 'plaza', 'parking',
   'platform', 'tram', 'urban', 'farmland', 'forest', 'rail', 'deck', 'deck_side', 'roof', 'wall',
-  'wall_window', 'grass_side', 'platform_side',
+  'wall_window', 'grass_side', 'platform_side', 'stone', 'brick', 'planks', 'glass',
 ];
 export const TILE = Object.fromEntries(TILE_NAMES.map((n, i) => [n, i]));
 
@@ -12,6 +12,7 @@ export const B = {
   AIR: 0, BEDROCK: 1, DIRT: 2, GRASS: 3, ASPHALT: 4, SIDEWALK: 5, BALLAST: 6, WATER: 7, PARK: 8,
   PLAZA: 9, PARKING: 10, PLATFORM: 11, TRAM: 12, URBAN: 13, FARMLAND: 14, FOREST: 15, RAIL: 16,
   DECK: 17, ROOF: 18, WALL: 19, WALL_WIN: 20,
+  STONE: 21, BRICK: 22, PLANKS: 23, GLASS: 24, // 設置用
 };
 
 const def = (top, side = top, bottom = side, extra = {}) => ({ top, side, bottom, solid: true, opaque: true, tint: false, ...extra });
@@ -39,6 +40,21 @@ BLOCKS[B.DECK] = def(TILE.deck, TILE.deck_side, TILE.deck_side);
 BLOCKS[B.ROOF] = def(TILE.roof, TILE.wall, TILE.wall, { tint: true });
 BLOCKS[B.WALL] = def(TILE.wall, TILE.wall, TILE.wall, { tint: true });
 BLOCKS[B.WALL_WIN] = def(TILE.wall, TILE.wall_window, TILE.wall, { tint: true });
+
+BLOCKS[B.STONE] = def(TILE.stone);
+BLOCKS[B.BRICK] = def(TILE.brick);
+BLOCKS[B.PLANKS] = def(TILE.planks);
+// ガラスは衝突するが隣の面を隠さない（テクスチャの透明部分は alphaTest で抜く）
+BLOCKS[B.GLASS] = { ...def(TILE.glass), opaque: false };
+
+// ホットバー（1〜9 キー）。name は表示名
+export const HOTBAR = [
+  { id: B.GRASS, name: '草' }, { id: B.DIRT, name: '土' }, { id: B.STONE, name: '石' },
+  { id: B.PLAZA, name: '石畳' }, { id: B.ASPHALT, name: 'アスファルト' }, { id: B.DECK, name: 'コンクリート' },
+  { id: B.BRICK, name: 'レンガ' }, { id: B.PLANKS, name: '木材' }, { id: B.GLASS, name: 'ガラス' },
+];
+// 壊せないブロック
+export const UNBREAKABLE = new Set([B.BEDROCK]);
 
 export const SOLID = Uint8Array.from(BLOCKS, (b) => (b.solid ? 1 : 0));
 export const OPAQUE = Uint8Array.from(BLOCKS, (b) => (b.opaque ? 1 : 0));

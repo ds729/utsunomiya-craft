@@ -72,6 +72,29 @@ const DRAW = {
     for (let k = 0; k < 16; k++) rect(c, 'rgb(96,150,70)', x + k, y, 1, 3 + Math.floor(r() * 2));
   },
   platform_side: (c, r, x, y) => noise(c, r, [168, 166, 158], 12, x, y),
+  stone: (c, r, x, y) => {
+    noise(c, r, [128, 128, 130], 34, x, y);
+    for (let k = 0; k < 6; k++) rect(c, 'rgba(0,0,0,0.18)', x + Math.floor(r() * 14), y + Math.floor(r() * 15), 2 + Math.floor(r() * 3), 1);
+  },
+  brick: (c, r, x, y) => {
+    noise(c, r, [160, 72, 56], 24, x, y);
+    for (let row = 0; row < 4; row++) {
+      rect(c, 'rgb(200,190,176)', x, y + row * 4 + 3, 16, 1); // 目地
+      const off = row % 2 ? 4 : 0;
+      for (let k = off; k < 16; k += 8) rect(c, 'rgb(200,190,176)', x + k, y + row * 4, 1, 3);
+    }
+  },
+  planks: (c, r, x, y) => {
+    noise(c, r, [168, 128, 78], 22, x, y);
+    for (let k = 3; k < 16; k += 4) rect(c, 'rgba(70,45,20,0.45)', x, y + k, 16, 1);
+    for (let k = 0; k < 4; k++) rect(c, 'rgba(70,45,20,0.35)', x + ((k * 7 + 3) % 16), y + k * 4, 1, 3);
+  },
+  glass: (c, r, x, y) => {
+    c.clearRect(x, y, 16, 16); // 中は透明
+    rect(c, 'rgba(200,225,240,1)', x, y, 16, 1); rect(c, 'rgba(200,225,240,1)', x, y + 15, 16, 1);
+    rect(c, 'rgba(200,225,240,1)', x, y, 1, 16); rect(c, 'rgba(200,225,240,1)', x + 15, y, 1, 16);
+    rect(c, 'rgba(235,245,255,1)', x + 3, y + 3, 1, 3); rect(c, 'rgba(235,245,255,1)', x + 4, y + 2, 2, 1);
+  },
 };
 
 export function createAtlasCanvas() {
