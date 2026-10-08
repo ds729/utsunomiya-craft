@@ -1,6 +1,7 @@
 // スポーン地点の探索（純関数）。建物の中・水中・線路上・低い高架の下には出さない
 import { MAT_WATER, MAT_PLATFORM, MAT_PLAZA, MAT_SIDEWALK } from './blocks.js';
 import { PLAYER } from './physics.js';
+import { isSolidAt } from './world-data.js';
 
 const MAT_BALLAST = 4, MAT_RAIL = 14, MAT_TRAM = 10;
 const PREFERRED = new Set([MAT_PLAZA, MAT_SIDEWALK]);
@@ -26,6 +27,12 @@ function isOpen(w, i, j) {
   return true;
 }
 
+// 編集差分があるとき: 足元が固体で、体の高さ（by=1,2）が空いているか（置いたブロックの中や掘った穴に出さない）
+function editsAllow(w, x, z) {
+  if (!w.edits || !w.edits.size) return true;
+  return isSolidAt(w, x, 0, z) && !isSolidAt(w, x, 1, z) && !isSolidAt(w, x, 2, z);
+}
+
 // 目標 (x, z)[m] から maxR の範囲で、距離（広場・歩道は優遇）が最小の立てるセルを返す
 // 戻り値: { x, y, z }（足元。セル中心、y=1 は地表ブロックの上面）または null
 export function findSpawn(w, x, z, maxR = 300) {
@@ -39,7 +46,7 @@ export function findSpawn(w, x, z, maxR = 300) {
         const i = ci + di, j = cj + dj;
         if (i < 0 || j < 0 || i >= w.W || j >= w.H) continue;
         const k = j * w.W + i;
-        if (!isStandable(w, k) || !isOpen(w, i, j)) continue;
+        if (!isStandable(w, k) || !isOpen(w, i, j) || !editsAllow(w, i - w.west, j - w.north)) continue;
         const score = Math.hypot(di, dj) - (PREFERRED.has(w.ground[k]) ? PREFER_BONUS : 0);
         if (score < bestScore) { bestScore = score; best = { x: i - w.west + 0.5, y: 1, z: j - w.north + 0.5 }; }
       }

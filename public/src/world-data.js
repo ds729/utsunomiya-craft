@@ -70,7 +70,14 @@ export function blockAt(w, x, by, z) {
   return baseBlockAt(w, k, by);
 }
 
-// 編集前の地形のブロック
+// 編集前の地形のブロック（ブロック座標で）
+export function originalBlockAt(w, x, by, z) {
+  if (by < Y_MIN || by > Y_MAX) return B.AIR;
+  const k = cellIndex(w, x, z);
+  return k < 0 ? B.AIR : baseBlockAt(w, k, by);
+}
+
+// 編集前の地形のブロック（セル index で）
 export function baseBlockAt(w, k, by) {
   let id = B.AIR;
   fillColumn(w, k, (y, b) => { if (y === by) id = b; });

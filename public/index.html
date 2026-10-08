@@ -18,7 +18,7 @@
   #compass::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 2px; height: 6px; margin-left: -1px; background: #fff; }
   #poi { left: 50%; top: 40px; transform: translateX(-50%); font-size: 18px; font-weight: 600; white-space: nowrap; }
   #info { left: 8px; top: 8px; line-height: 1.5; background: rgba(0,0,0,.35); padding: 4px 8px; border-radius: 4px; font-variant-numeric: tabular-nums; }
-  #license { left: 6px; bottom: 4px; max-width: calc(50% - 250px); font-size: 11px; background: rgba(0,0,0,.35); padding: 2px 6px; border-radius: 3px; }
+  #license { left: 6px; bottom: 4px; max-width: max(200px, calc(50% - 250px)); font-size: 11px; background: rgba(0,0,0,.35); padding: 2px 6px; border-radius: 3px; }
   #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20,30,45,.55); color: #fff; cursor: pointer; }
   #overlay .box { max-width: 420px; margin: 16px; padding: 20px 24px; background: rgba(0,0,0,.55); border-radius: 8px; line-height: 1.7; }
   #overlay h1 { margin: 0 0 8px; font-size: 22px; }
@@ -45,7 +45,10 @@
   /* タッチ操作 */
   .touch-ui { display: none; }
   body.touch .touch-ui { display: block; }
-  #look { position: fixed; left: 40%; right: 0; top: 0; bottom: 0; touch-action: none; }
+  #look { position: fixed; left: 40%; right: 0; top: 0; bottom: 0; touch-action: none; z-index: 0; }
+  body.touch #hotbar, body.touch #minimap { z-index: 2; }
+  body.touch #minimap { pointer-events: auto; }
+  .tbtn { z-index: 1; }
   #stick { position: fixed; left: 24px; bottom: 80px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.15); border: 2px solid rgba(255,255,255,.35); touch-action: none; }
   #stick div { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,.45); }
   .tbtn { position: fixed; width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,.2); border: 2px solid rgba(255,255,255,.4); color: #fff; font-size: 13px; display: flex; align-items: center; justify-content: center; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -56,6 +59,8 @@
   #btn-place { right: 24px; bottom: 170px; }
   #btn-menu { right: 186px; top: 8px; width: 44px; height: 44px; border-radius: 6px; }
   body.touch #crosshair { display: block; }
+  /* 中くらいの幅: ライセンスは左上（情報欄の下）に */
+  @media (max-width: 900px) { #license { top: 84px; bottom: auto; max-width: 52%; } }
   /* 狭い画面（スマホ縦） */
   @media (max-width: 600px) {
     .hud { font-size: 11px; }

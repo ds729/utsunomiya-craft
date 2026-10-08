@@ -37,3 +37,16 @@ test('実データ: 東口のスポーン地点は歩行可能で、駅の東側
   assert.ok(!collides(s.x, s.y, s.z, (a, b, c) => isSolidAt(w, a, b, c)));
   console.log('spawn', s, 'target', t);
 });
+
+test('編集差分を考慮: 置いたブロックの中や掘った穴にはスポーンしない', async () => {
+  const { EditStore } = await import('../public/src/edits.js');
+  const { makeWorld } = await import('../public/src/world-data.js');
+  const base = makeTestWorld(64);
+  const w = makeWorld(base.meta, base, new EditStore());
+  w.edits.set(0, 1, 0, 22); w.edits.set(0, 2, 0, 22); // 2段の柱
+  w.edits.set(1, 0, 0, 0);                            // 穴
+  const s = findSpawn(w, 0.5, 0.5);
+  assert.ok(!(Math.floor(s.x) === 0 && Math.floor(s.z) === 0), '柱の中に出ない');
+  assert.ok(!(Math.floor(s.x) === 1 && Math.floor(s.z) === 0), '穴に出ない');
+  assert.ok(!collides(s.x, s.y, s.z, (a, b, c) => isSolidAt(w, a, b, c)));
+});

@@ -79,3 +79,21 @@ test('破壊・設置のルール: 岩盤は壊せない、自分の位置には
   assert.equal(placeAt(w, { x: 1, y: 0, z: 1, nx: 0, ny: 0, nz: 0 }, B.BRICK, deps), null, '固体の場所');
   assert.equal(placeAt(w, { x: 40, y: 0, z: 1, nx: 0, ny: 1, nz: 0 }, B.BRICK, deps), null, 'ワールド外');
 });
+
+test('置いて壊す・掘って埋め戻すと差分が消える。設置の高さ上限・下限', async () => {
+  const { breakAt, placeAt } = await import('../public/src/edits.js');
+  const { cellIndex, originalBlockAt, Y_MIN, Y_MAX } = await import('../public/src/world-data.js');
+  const { UNBREAKABLE } = await import('../public/src/blocks.js');
+  const w = withEdits();
+  const deps = { blockAt, baseAt: originalBlockAt, cellIndex, yMin: Y_MIN, yMax: Y_MAX, unbreakable: UNBREAKABLE, isReplaceable: (id) => id === B.AIR || id === B.WATER, overlapsPlayer: () => false };
+  placeAt(w, { x: 5, y: 0, z: 5, nx: 0, ny: 1, nz: 0 }, B.STONE, deps);
+  assert.equal(w.edits.size, 1);
+  breakAt(w, { x: 5, y: 1, z: 5 }, deps);
+  assert.equal(w.edits.size, 0, '置いて壊したら差分なし');
+  breakAt(w, { x: 6, y: 0, z: 6 }, deps);
+  placeAt(w, { x: 6, y: -1, z: 6, nx: 0, ny: 1, nz: 0 }, B.GRASS, deps);
+  assert.equal(w.edits.size, 0, '同じ地表ブロックで埋め戻したら差分なし');
+  assert.equal(placeAt(w, { x: 7, y: Y_MAX, z: 7, nx: 0, ny: 1, nz: 0 }, B.STONE, deps), null, '上限より上');
+  assert.ok(placeAt(w, { x: 7, y: Y_MAX - 1, z: 7, nx: 0, ny: 1, nz: 0 }, B.STONE, deps), '上限ちょうど');
+  assert.equal(placeAt(w, { x: 8, y: Y_MIN + 1, z: 8, nx: 0, ny: -1, nz: 0 }, B.STONE, deps), null, '岩盤の位置');
+});

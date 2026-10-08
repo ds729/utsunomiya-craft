@@ -1,7 +1,8 @@
 // タッチ操作: 左=仮想ジョイスティック、右=視点ドラッグ、ボタン（ジャンプ・壊す・置く）
 import { pressJump } from './physics.js';
 
-export const isTouchDevice = () => matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+// 主な入力がタッチの端末だけ（タッチ画面つきノートPC ではマウス操作のまま）
+export const isTouchDevice = () => matchMedia('(pointer: coarse)').matches;
 
 export class TouchControls {
   constructor(root, controls, { onBreak, onPlace }) {

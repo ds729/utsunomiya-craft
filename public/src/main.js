@@ -1,6 +1,6 @@
 // エントリポイント: three.js の描画・ループ・UI・デバッグAPI
 import * as THREE from 'three';
-import { loadWorld, isSolidAt, isWaterAt, blockAt, cellIndex, Y_MIN, Y_MAX } from './world-data.js';
+import { loadWorld, isSolidAt, isWaterAt, blockAt, originalBlockAt, cellIndex, Y_MIN, Y_MAX } from './world-data.js';
 import { ChunkManager } from './chunks.js';
 import { createAtlasCanvas } from './atlas.js';
 import { createPlayer, stepPlayer, collides, PLAYER } from './physics.js';
@@ -154,6 +154,17 @@ async function main() {
     return raycast(eye, dir, REACH, isTarget);
   }
   const saveTimers = new Map();
+  // まとめ書き待ちの保存を今すぐ書く（ページを離れるとき・隠れるとき）
+  const flushSaves = () => {
+    for (const [key, t] of saveTimers) {
+      clearTimeout(t);
+      const [cx, cz] = key.split(',').map(Number);
+      storage.save(key, world.edits.serialize(cx, cz));
+    }
+    saveTimers.clear();
+  };
+  addEventListener('pagehide', flushSaves);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushSaves(); });
   function afterEdit(pos) {
     if (!pos) return false;
     for (const [cx, cz] of affectedChunks(pos[0], pos[2])) chunks.rebuild(cx, cz);
@@ -164,7 +175,7 @@ async function main() {
     return true;
   }
   const editDeps = {
-    blockAt, cellIndex, yMin: Y_MIN, yMax: Y_MAX, unbreakable: UNBREAKABLE,
+    blockAt, baseAt: originalBlockAt, cellIndex, yMin: Y_MIN, yMax: Y_MAX, unbreakable: UNBREAKABLE,
     isReplaceable: (id) => id === B.AIR || id === B.WATER,
     overlapsPlayer: (x, y, z) => collides(player.x, player.y, player.z, (a, b, c) => a === x && b === y && c === z),
   };
@@ -195,6 +206,7 @@ async function main() {
   }
   startBtn.addEventListener('click', () => { if (ready) resume(); });
   $('btn-menu').addEventListener('click', () => controls.setActive(false));
+  $('minimap').addEventListener('click', () => minimap.toggle()); // タッチではミニマップのタップで全体地図
   const updateEditCount = () => { $('edit-count').textContent = `編集 ${world.edits.size} ブロック${storage.available ? '' : '（この環境では保存されません）'}`; };
   $('reset-edits').addEventListener('click', async () => {
     if (!confirm('ブロックの編集をすべて元に戻します。よろしいですか？')) return;

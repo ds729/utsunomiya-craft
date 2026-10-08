@@ -88,21 +88,27 @@ export function raycast(origin, dir, maxDist, isTarget) {
 // --- 破壊・設置のルール（純関数）---
 // w: world（edits 必須）、blockAt/cellIndex を受け取って循環 import を避ける
 // 破壊: 岩盤は壊せない。戻り値: 変わった座標 [x, y, z] または null
-export function breakAt(w, hit, { blockAt, unbreakable }) {
+export function breakAt(w, hit, { blockAt, baseAt, unbreakable }) {
   if (!hit) return null;
   const id = blockAt(w, hit.x, hit.y, hit.z);
   if (!id || unbreakable.has(id)) return null;
-  w.edits.set(hit.x, hit.y, hit.z, 0);
+  setOrUnset(w, hit.x, hit.y, hit.z, 0, baseAt);
   return [hit.x, hit.y, hit.z];
 }
 
 // 設置: 当たった面の手前。空気か水の場所だけ、ワールド内・高さ範囲内、プレイヤーと重ならない
-export function placeAt(w, hit, id, { blockAt, cellIndex, overlapsPlayer, yMin, yMax, isReplaceable }) {
+export function placeAt(w, hit, id, { blockAt, baseAt, cellIndex, overlapsPlayer, yMin, yMax, isReplaceable }) {
   if (!hit) return null;
   const x = hit.x + hit.nx, y = hit.y + hit.ny, z = hit.z + hit.nz;
   if (y <= yMin || y > yMax || cellIndex(w, x, z) < 0) return null;
   if (!isReplaceable(blockAt(w, x, y, z))) return null;
   if (overlapsPlayer(x, y, z)) return null;
-  w.edits.set(x, y, z, id);
+  setOrUnset(w, x, y, z, id, baseAt);
   return [x, y, z];
+}
+
+// 元の地形と同じ値に戻るなら差分を消す（置いて壊しただけのブロックを数えない・保存しない）
+function setOrUnset(w, x, y, z, id, baseAt) {
+  if (baseAt && baseAt(w, x, y, z) === id) w.edits.unset(x, y, z);
+  else w.edits.set(x, y, z, id);
 }
