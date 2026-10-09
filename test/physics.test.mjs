@@ -35,11 +35,32 @@ test('歩行速度 4.3m/s、ダッシュ 8.0m/s、向き（yaw=0 は北 = -z）'
   assert.ok(Math.abs(q.z - (0.5 + PHYS.SPRINT)) < 0.1, `z=${q.z}`);
 });
 
-test('1段はジャンプで登れ、2段は登れない', () => {
+test('1段はジャンプでも歩くだけでも（自動で）登れ、2段は登れない', () => {
   const p = run(createPlayer(0.5, 1, 0.5), { forward: 1, yaw: headingToYaw(270), jump: true }, 3, noClip);
   assert.ok(p.x < -5 + PLAYER.W && p.x > -5, `ホームに登って2段の壁で止まる x=${p.x}`);
   const q = run(createPlayer(0.5, 1, 0.5), { forward: 1, yaw: headingToYaw(270) }, 3, noClip);
-  assert.ok(q.x >= -2 + PLAYER.W / 2 - 0.01, `ジャンプしないと1段で止まる x=${q.x}`);
+  assert.ok(q.x < -5 + PLAYER.W && q.x > -5, `歩くだけで1段（ホーム）を越え、2段の壁で止まる x=${q.x}`);
+  assert.ok(q.stepped >= 1 - 1e-3, '段差を上がった量を記録（カメラを滑らかにする用）');
+});
+
+test('起伏のある地形: 1段ずつの坂は歩いて上り下りでき、2段の崖は上がれない', async () => {
+  const { makeWorld } = await import('../public/src/world-data.js');
+  const base = makeTestWorld(64);
+  // 東へ 3m ごとに 1 段上がる坂（x=0..14 → g=0..4）、x=20 で 2 段の崖
+  for (let j = 0; j < 64; j++) for (let i = 0; i < 64; i++) {
+    const x = i - 32;
+    base.elev[j * 64 + i] = x < 0 ? 0 : x < 15 ? Math.floor(x / 3) : x < 20 ? 5 : 7;
+  }
+  const w = makeWorld(base.meta, base);
+  const s = (x, y, z) => isSolidAt(w, x, y, z);
+  const p = createPlayer(-2.5, 1, 0.5);
+  for (let t = 0; t < 8; t += 1 / 60) {
+    stepPlayer(p, { forward: 1, yaw: headingToYaw(90) }, 1 / 60, s);
+    assert.ok(!collides(p.x, p.y, p.z, s));
+  }
+  assert.ok(p.x > 19 && p.x < 20 && Math.abs(p.y - 6) < 0.01, `坂を上り、崖の手前で止まる x=${p.x} y=${p.y}`);
+  for (let t = 0; t < 8; t += 1 / 60) stepPlayer(p, { forward: 1, yaw: headingToYaw(270) }, 1 / 60, s);
+  assert.ok(p.x < -5 && Math.abs(p.y - 1) < 0.01, `下って戻れる x=${p.x} y=${p.y}`);
 });
 
 test('水に入ると沈み、ジャンプで岸に上がれる', () => {

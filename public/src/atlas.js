@@ -95,6 +95,28 @@ const DRAW = {
     rect(c, 'rgba(200,225,240,1)', x, y, 1, 16); rect(c, 'rgba(200,225,240,1)', x + 15, y, 1, 16);
     rect(c, 'rgba(235,245,255,1)', x + 3, y + 3, 1, 3); rect(c, 'rgba(235,245,255,1)', x + 4, y + 2, 2, 1);
   },
+  // 手すり: 上の笠木と縦の格子（間は透明）
+  railing: (c, r, x, y) => {
+    c.clearRect(x, y, 16, 16);
+    rect(c, 'rgb(200,202,206)', x, y, 16, 2);
+    rect(c, 'rgb(150,152,156)', x, y + 2, 16, 1);
+    for (let k = 1; k < 16; k += 4) rect(c, 'rgb(170,172,176)', x + k, y + 3, 1, 13);
+    rect(c, 'rgb(150,152,156)', x, y + 14, 16, 2);
+  },
+  railing_top: (c, r, x, y) => { c.clearRect(x, y, 16, 16); rect(c, 'rgb(200,202,206)', x + 6, y, 4, 16); rect(c, 'rgb(200,202,206)', x, y + 6, 16, 4); },
+  sign: (c, r, x, y) => { noise(c, r, [28, 52, 110], 10, x, y); rect(c, 'rgba(255,255,255,0.25)', x, y, 16, 1); },
+  // 餃子: 皮の色、上面にひだ、底は焼き色
+  gyoza: (c, r, x, y) => {
+    noise(c, r, [236, 222, 180], 14, x, y);
+    for (let k = 1; k < 16; k += 3) { rect(c, 'rgba(160,130,80,0.45)', x + k, y + 2, 1, 5); rect(c, 'rgba(160,130,80,0.3)', x + k + 1, y + 7, 1, 3); }
+  },
+  gyoza_side: (c, r, x, y) => {
+    noise(c, r, [232, 216, 172], 14, x, y);
+    rect(c, 'rgba(190,130,60,0.6)', x, y + 13, 16, 3);
+    for (let k = 0; k < 16; k += 4) rect(c, 'rgba(160,130,80,0.35)', x + k, y, 1, 6);
+  },
+  gyoza_bottom: (c, r, x, y) => noise(c, r, [176, 112, 52], 30, x, y),
+  steel: (c, r, x, y) => { noise(c, r, [150, 156, 162], 10, x, y); rect(c, 'rgba(0,0,0,0.15)', x, y + 15, 16, 1); rect(c, 'rgba(255,255,255,0.2)', x, y, 16, 1); },
 };
 
 export function createAtlasCanvas() {

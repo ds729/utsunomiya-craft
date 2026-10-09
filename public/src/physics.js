@@ -14,7 +14,7 @@ const HW = PLAYER.W / 2;
 const EPS = 1e-4;
 
 export function createPlayer(x, y, z) {
-  return { x, y, z, vx: 0, vy: 0, vz: 0, onGround: false, flying: false, inWater: false, lastJumpPress: -Infinity };
+  return { x, y, z, vx: 0, vy: 0, vz: 0, onGround: false, flying: false, inWater: false, lastJumpPress: -Infinity, stepped: 0 };
 }
 
 // AABB が固体ブロックと重なるか
@@ -29,10 +29,20 @@ export function collides(x, y, z, isSolid) {
 }
 
 // 1 軸ぶん移動し、ぶつかったらブロック境界に止める。止まったら true
-function moveAxis(p, axis, d, isSolid) {
+// step: 地面に立っているとき、1 ブロックの段差なら自動で上がる（地形の起伏をジャンプなしで歩けるように）
+function moveAxis(p, axis, d, isSolid, step = false) {
   if (d === 0) return false;
   p[axis] += d;
   if (!collides(p.x, p.y, p.z, isSolid)) return false;
+  if (step) {
+    // 足元を次のブロック境界の 1 つ上に置いて重ならなければ上がる（上がれるのは 1 ブロックまで）
+    const up = Math.floor(p.y + EPS) + 1 + EPS - p.y;
+    if (up > 0 && up <= 1 + 2 * EPS && !collides(p.x, p.y + up, p.z, isSolid)) {
+      p.y += up;
+      p.stepped += up;
+      return false;
+    }
+  }
   if (axis === 'y') {
     p.y = d < 0 ? Math.floor(p.y) + 1 + EPS : Math.floor(p.y + PLAYER.H) - PLAYER.H - EPS;
   } else {
@@ -87,8 +97,9 @@ function substep(p, input, dt, isSolid, isWater) {
     p.vy = Math.max(p.vy - PHYS.GRAVITY * dt, -PHYS.TERMINAL);
   }
 
-  moveAxis(p, 'x', p.vx * dt, isSolid);
-  moveAxis(p, 'z', p.vz * dt, isSolid);
+  const step = p.onGround && !p.flying;
+  moveAxis(p, 'x', p.vx * dt, isSolid, step);
+  moveAxis(p, 'z', p.vz * dt, isSolid, step);
   const dy = p.vy * dt;
   p.onGround = false;
   if (moveAxis(p, 'y', dy, isSolid)) {

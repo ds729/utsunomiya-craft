@@ -28,8 +28,10 @@ export class Hud {
       m.s.style.left = `${50 + (d / 70) * 50}%`;
     }
     const ll = toLatLon(this.meta.origin, p.x, p.z);
+    // 標高: 地表ブロックの高さ 0 が terrain.base[m]。足元（ブロックの上面）は y - 1
+    const alt = (this.meta.terrain?.base || 0) + p.y - 1;
     this.info.innerHTML =
-      `x ${p.x.toFixed(1)}　y ${(p.y - 1).toFixed(1)}　z ${p.z.toFixed(1)}<br>` +
+      `x ${p.x.toFixed(1)}　y ${(p.y - 1).toFixed(1)}　z ${p.z.toFixed(1)}${this.meta.terrain?.base ? `　標高 ${alt.toFixed(0)}m` : ''}<br>` +
       `${ll.lat.toFixed(5)}, ${ll.lon.toFixed(5)}<br>` +
       `方位 ${Math.round(heading)}° ${headingLabel(heading)}　${fps} FPS${p.flying ? '　フライ' : ''}${extra ? `<br>${extra}` : ''}`;
     if (now - this.lastPoiCheck > 250) {

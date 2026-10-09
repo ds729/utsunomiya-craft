@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPlayer, stepPlayer, collides } from '../public/src/physics.js';
-import { isSolidAt, isWaterAt } from '../public/src/world-data.js';
+import { isSolidAt, isWaterAt, cellIndex } from '../public/src/world-data.js';
 import { findSpawn } from '../public/src/spawn.js';
 import { loadRealWorld } from './helpers/world.mjs';
 
@@ -10,11 +10,12 @@ const w = loadRealWorld();
 const solid = (x, y, z) => isSolidAt(w, x, y, z);
 const water = (x, y, z) => isWaterAt(w, x, y, z);
 const DT = 1 / 60;
+const gAt = (x, z) => w.elev[cellIndex(w, Math.floor(x), Math.floor(z))];
 
 // 1 フレーム進めて不変条件を検査。詰まったら自動でジャンプ
 function walker(p) {
   let hist = [];
-  let frames = 0, maxClimb = p.y;
+  let frames = 0, maxClimb = 0;
   return (input) => {
     hist.push([p.x, p.z]);
     if (hist.length > 30) hist.shift();
@@ -22,13 +23,17 @@ function walker(p) {
     stepPlayer(p, { ...input, jump: stuck || input.jump }, DT, solid, water);
     frames++;
     assert.ok(!collides(p.x, p.y, p.z, solid), `壁抜け: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}) frame ${frames}`);
-    // 床抜け: 体が掛かる列がすべて水なら底(y=0)、それ以外は地表の上面(y=1)より下に行かない
-    const cols = [];
-    for (const dx of [-0.3, 0.3]) for (const dz of [-0.3, 0.3]) cols.push(water(Math.floor(p.x + dx), 0, Math.floor(p.z + dz)));
-    const floor = cols.every(Boolean) ? 0 : 1;
+    // 床抜け: 体が掛かる列の地表の高さを g として、水の列は底（g）、それ以外は地表の上面（g+1）より下に行かない
+    // （段差の縁では低い方の列を基準にする）
+    let floor = Infinity, top = -Infinity;
+    for (const dx of [-0.3, 0.3]) for (const dz of [-0.3, 0.3]) {
+      const g = gAt(p.x + dx, p.z + dz);
+      const f = water(Math.floor(p.x + dx), g, Math.floor(p.z + dz)) ? g : g + 1;
+      floor = Math.min(floor, f); top = Math.max(top, g + 1);
+    }
     assert.ok(p.y >= floor - 1e-3, `床抜け: y=${p.y} (床 ${floor}) at (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
     assert.ok(Math.abs(p.x) <= 1000 && Math.abs(p.z) <= 1000, 'ワールド外に出た');
-    maxClimb = Math.max(maxClimb, p.y);
+    maxClimb = Math.max(maxClimb, p.y - top); // 足元の地表の上面からの高さ
     return { maxClimb };
   };
 }
@@ -43,8 +48,8 @@ test('スポーン地点から16方向に60秒ずつ歩いても壁抜け・床�
     let info;
     for (let f = 0; f < 60 * 60; f++) info = step({ forward: 1, yaw, sprint: true });
     dist.push(Math.round(Math.hypot(p.x - s.x, p.z - s.z)));
-    // 床板より上には乗らない（ジャンプでは1ブロックまで）: 歩行中の最高点は建物の屋根程度に限られる
-    assert.ok(info.maxClimb < 1 + 1.3 + 2, `高く登りすぎ ${info.maxClimb}`);
+    // 床板より上には乗らない（ジャンプ・段差の自動上りは1ブロックまで）: 地表の上面からの高さは低い屋根程度に限られる
+    assert.ok(info.maxClimb < 1.3 + 2, `高く登りすぎ ${info.maxClimb}`);
   }
   console.log('16方向の到達距離[m]', dist.join(','));
   // スポーンで閉じ込められていない（自動ジャンプで誤魔化していない）
@@ -106,7 +111,7 @@ test('駅（西側）→ 西口駅前広場 → 大通り を歩いて到達で�
   console.log(`経路 ${path.length} セル、${(f / 60).toFixed(0)} 秒、到達誤差 ${left.toFixed(1)}m`, { start, plaza, odori });
   assert.ok(left < 3, `大通りに到達できない（残り ${left}m）`);
   // 地表を歩いている（床板の上などに乗っていない）
-  assert.ok(Math.abs(p.y - 1) < 0.01, `y=${p.y}`);
+  assert.ok(Math.abs(p.y - (gAt(p.x, p.z) + 1)) < 0.01, `y=${p.y} g=${gAt(p.x, p.z)}`);
 });
 
 // 道路系の材質（アスファルト・歩道・広場・駐車場）だけを 4 近傍でたどる経路
@@ -140,7 +145,7 @@ function roadPath(from, to) {
 }
 
 function follow(path, maxSec) {
-  const p = createPlayer(path[0].x, 1, path[0].z);
+  const p = createPlayer(path[0].x, gAt(path[0].x, path[0].z) + 1, path[0].z);
   const step = walker(p);
   let idx = 0, f = 0;
   const end = path[path.length - 1];

@@ -116,7 +116,7 @@ test('地表ブロック対応が world.json の材質と一致', () => {
   const name = { GRASS: 'grass', DIRT: 'dirt', ASPHALT: 'asphalt', SIDEWALK: 'sidewalk', BALLAST: 'ballast', WATER: 'water', PARK: 'park', PLAZA: 'plaza', PARKING: 'parking', PLATFORM: 'platform', TRAM: 'tram', URBAN: 'urban', FARMLAND: 'farmland', FOREST: 'forest', RAIL: 'rail' };
   const byId = Object.fromEntries(Object.entries(B).map(([k, v]) => [v, k]));
   for (const [id, mat] of Object.entries(meta.materials)) assert.equal(name[byId[GROUND_BLOCK[id]]], mat, `材質 ${id}`);
-  assert.ok(TILE_NAMES.length <= 32);
+  assert.ok(TILE_NAMES.length <= 40); // アトラスは 8 列 × 5 行まで（行数は ATLAS_ROWS で自動）
 });
 
 test('線路の模様は東西に続くとき 90° 回す', () => {
@@ -149,4 +149,48 @@ test('ChunkManager.rebuild: 読み込み済みのチャンクだけ作り直し�
   // 石1個: 上面と側面4つの5面が増え、下の地面の上面1つが隠れる → +4面 = +16頂点
   assert.equal(m.stats.vertices, v0 + 16);
   assert.equal(m.rebuild(50, 50), false);
+});
+
+test('ChunkManager（非同期 mesher）: 古い依頼の結果・範囲外の結果は捨て、作り直し中は古いメッシュを残す', async () => {
+  const { ChunkManager } = await import('../public/src/chunks.js');
+  const { EditStore } = await import('../public/src/edits.js');
+  const { makeWorld } = await import('../public/src/world-data.js');
+  const base = makeTestWorld(64);
+  const w = makeWorld(base.meta, base, new EditStore());
+  const pending = []; // 依頼を手で処理する偽の mesher
+  const mesher = {
+    capacity: () => 4 - pending.length,
+    request: (cx, cz, gen, done) => pending.push({ cx, cz, done }),
+  };
+  const run = (n = Infinity) => { // 依頼を n 件処理（同期で作る）
+    for (let i = 0; i < n && pending.length; i++) {
+      const r = pending.shift();
+      r.done(meshChunk(generatePadded(w, r.cx, r.cz)), 1);
+    }
+  };
+  const made = [], disposed = [];
+  const m = new ChunkManager(w, { viewDist: 1, mesher, makeMesh: (x) => (made.push(x), x), disposeMesh: (x) => disposed.push(x) });
+  assert.ok(m.update(0, 0) > 0);
+  assert.equal(pending.length, 4, '空きぶんだけ依頼');
+  for (let i = 0; i < 10 && m.update(0, 0) > 0; i++) run();
+  assert.equal(m.pending, 0);
+  const loaded = m.loaded.size, v0 = m.stats.vertices;
+  // 作り直し: 届くまで古いメッシュはそのまま
+  w.edits.set(3, 1, 3, B.STONE);
+  m.rebuild(0, 0);
+  assert.equal(disposed.length, 0);
+  // 届く前にもう一度作り直す → 1 回目の結果は捨てる
+  const first = pending.shift();
+  m.rebuild(0, 0);
+  first.done(meshChunk(generatePadded(w, 0, 0)), 1);
+  m.update(0, 0);
+  assert.equal(disposed.length, 0, '古い依頼の結果では差し替えない');
+  run(); m.update(0, 0);
+  assert.equal(disposed.length, 1, '新しい結果で差し替え、古いメッシュを破棄');
+  assert.equal(m.stats.vertices, v0 + 16);
+  assert.equal(m.loaded.size, loaded);
+  // 遠くへ移動: 依頼中に範囲外になったチャンクの結果は捨てる
+  m.update(40 * 16, 40 * 16);
+  run(); m.update(40 * 16, 40 * 16);
+  for (const k of m.loaded.keys()) { const [cx] = k.split(',').map(Number); assert.ok(cx >= 0 || m.want.has(k)); }
 });

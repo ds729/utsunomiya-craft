@@ -4,11 +4,16 @@ const STORE = 'chunkEdits';
 
 function req(r) { return new Promise((ok, ng) => { r.onsuccess = () => ok(r.result); r.onerror = () => ng(r.error); }); }
 
-export async function openEditStorage() {
+// version: world.json の editsVersion。上がったら（地形の作り直しなどで座標が合わなくなったら）保存済みの編集を消す
+export async function openEditStorage(version = 1) {
   let db = null;
   try {
-    const open = indexedDB.open(DB_NAME, 1);
-    open.onupgradeneeded = () => open.result.createObjectStore(STORE);
+    const open = indexedDB.open(DB_NAME, version);
+    open.onupgradeneeded = () => {
+      const d = open.result;
+      if (d.objectStoreNames.contains(STORE)) d.deleteObjectStore(STORE);
+      d.createObjectStore(STORE);
+    };
     db = await req(open);
   } catch (e) {
     console.warn('IndexedDB が使えないため、編集は保存されません', e);

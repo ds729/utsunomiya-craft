@@ -12,29 +12,34 @@ export function generatePadded(w, cx, cz) {
   const blocks = new Uint8Array(P * P * CHUNK_H);
   const tints = new Uint8Array(P * P); // 列の bldtype バイト（壁色用）
   const x0 = cx * CS - 1, z0 = cz * CS - 1;
+  let top = 0; // 空気でないブロックの最大 yi（メッシュ化はここまで走査する）
+  let col = 0;
+  const set = (by, id) => { const yi = by - Y_MIN; blocks[yi * P * P + col] = id; if (yi > top) top = yi; };
   for (let pz = 0; pz < P; pz++) {
     for (let px = 0; px < P; px++) {
       const k = cellIndex(w, x0 + px, z0 + pz);
       if (k < 0) continue;
-      const col = pz * P + px;
+      col = pz * P + px;
       tints[col] = w.bldtype[k];
-      fillColumn(w, k, (by, id) => { blocks[(by - Y_MIN) * P * P + col] = id; });
+      fillColumn(w, k, set);
     }
   }
-  // 編集差分を重ねる（自チャンクと、余白にかかる周囲8チャンク）
-  if (w.edits) {
+  // 装飾、編集差分の順に重ねる（自チャンクと、余白にかかる周囲8チャンク）
+  for (const store of [w.decor, w.edits]) {
+    if (!store) continue;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-      const m = w.edits.chunk(cx + dx, cz + dz);
+      const m = store.chunk(cx + dx, cz + dz);
       if (!m) continue;
       for (const [idx, id] of m) {
         const lx = idx % CS, lz = Math.floor(idx / CS) % CS, yi = Math.floor(idx / (CS * CS));
         const px = (cx + dx) * CS + lx - x0, pz = (cz + dz) * CS + lz - z0;
         if (px < 0 || pz < 0 || px >= P || pz >= P || cellIndex(w, x0 + px, z0 + pz) < 0) continue;
         blocks[yi * P * P + pz * P + px] = id;
+        if (id && yi > top) top = yi;
       }
     }
   }
-  return { cx, cz, blocks, tints };
+  return { cx, cz, blocks, tints, top };
 }
 
 // 16×16×CHUNK_H（余白なし）。テストや編集用
@@ -91,11 +96,12 @@ function runLength(blocks, base, px, pz, dx, dz, id) {
 // 戻り値: positions(Float32, ワールド座標), uvs, colors(Float32, 陰影×建物色), indices(Uint16|Uint32), faces
 export function meshChunk(pad) {
   const { blocks, tints, cx, cz } = pad;
+  const yEnd = Math.min(CHUNK_H, (pad.top ?? CHUNK_H - 1) + 1);
   const pos = [], uv = [], col = [], idx = [];
   const PP = P * P;
   const ox = cx * CS - 1, oz = cz * CS - 1;
   let faces = 0;
-  for (let yi = 0; yi < CHUNK_H; yi++) {
+  for (let yi = 0; yi < yEnd; yi++) {
     const by = yi + Y_MIN;
     for (let pz = 1; pz <= CS; pz++) {
       for (let px = 1; px <= CS; px++) {

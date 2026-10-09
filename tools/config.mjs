@@ -36,6 +36,13 @@ export const PLATEAU = {
   attribution: '3D都市モデル（Project PLATEAU）国土交通省',
 };
 
+// 国土地理院 標高タイル（テキスト形式）。DEM5A（5m、z15）を主に、欠測は DEM10B（10m、z14）で補う
+export const DEM = {
+  url: 'https://cyberjapandata.gsi.go.jp/xyz/{id}/{z}/{x}/{y}.txt',
+  sources: [{ id: 'dem5a', z: 15 }, { id: 'dem', z: 14 }],
+  attribution: '国土地理院 標高タイル',
+};
+
 export const PATHS = {
   rawDir: 'data/raw',
   station: 'data/raw/station.json',
@@ -43,4 +50,5 @@ export const PATHS = {
   worldDir: 'public/world',
   previewDir: 'data/preview',
   plateauDir: 'data/raw/plateau',
+  demDir: 'data/raw/dem',
 };

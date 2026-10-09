@@ -4,6 +4,7 @@
 //   --url=http://localhost:8000/ を付けると内蔵サーバではなく既存のサーバ（python3 -m http.server 等）を開く
 //   --base を付けると public の親ディレクトリを配信し、サブパス（GitHub Pages 相当）で開く
 //   Phase 2 の確認用: --time=20（時刻）--map（全体地図）--pause（一時停止メニュー）--touch（スマホ相当の画面・タッチ）
+//   Phase 3: --tram=秒（ライトラインの運行時刻。同じ時刻なら同じ位置）--worker=0（チャンク生成を本スレッドで。性能比較用）
 //   --act=break,place:6,...（狙っているブロックを壊す/ホットバー番号のブロックを置く）--reload（撮影前に再読み込みして保存を確認）
 // 出力: tools/e2e/shots/<name>.png と、標準出力に window.__stats の JSON
 import http from 'node:http';
@@ -52,7 +53,7 @@ page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 const requested = [];
 page.on('request', (r) => requested.push(new URL(r.url()).pathname));
 
-const query = `?debug=1${args.view ? `&view=${args.view}` : ''}`;
+const query = `?debug=1${args.view ? `&view=${args.view}` : ''}${args.worker != null ? `&worker=${args.worker}` : ''}`;
 const url = args.url ? `${args.url}${query}` : `http://127.0.0.1:${port}${urlPrefix}${query}`;
 const tLoad = Date.now();
 let out = {};
@@ -89,6 +90,7 @@ try {
     out.reloaded = true;
   }
   if (args.time != null) await page.evaluate((h) => window.__setTime(h), +args.time);
+  if (args.tram != null) await page.evaluate((t) => window.__tramTime(t), +args.tram);
   if (args.map) await page.evaluate(() => window.__toggleMap());
   if (args.pause) await page.evaluate(() => window.__pause());
   await page.waitForTimeout(500);

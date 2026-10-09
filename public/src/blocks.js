@@ -5,6 +5,7 @@ export const TILE_NAMES = [
   'grass', 'dirt', 'bedrock', 'asphalt', 'sidewalk', 'ballast', 'water', 'park', 'plaza', 'parking',
   'platform', 'tram', 'urban', 'farmland', 'forest', 'rail', 'deck', 'deck_side', 'roof', 'wall',
   'wall_window', 'grass_side', 'platform_side', 'stone', 'brick', 'planks', 'glass',
+  'railing', 'railing_top', 'sign', 'gyoza', 'gyoza_side', 'gyoza_bottom', 'steel',
 ];
 export const TILE = Object.fromEntries(TILE_NAMES.map((n, i) => [n, i]));
 
@@ -13,6 +14,7 @@ export const B = {
   PLAZA: 9, PARKING: 10, PLATFORM: 11, TRAM: 12, URBAN: 13, FARMLAND: 14, FOREST: 15, RAIL: 16,
   DECK: 17, ROOF: 18, WALL: 19, WALL_WIN: 20,
   STONE: 21, BRICK: 22, PLANKS: 23, GLASS: 24, // 設置用
+  RAILING: 25, SIGN: 26, GYOZA: 27, STEEL: 28,  // 装飾用（Phase 3: 手すり・駅名板・餃子像・停留場の上屋）
 };
 
 const def = (top, side = top, bottom = side, extra = {}) => ({ top, side, bottom, solid: true, opaque: true, tint: false, ...extra });
@@ -46,6 +48,12 @@ BLOCKS[B.BRICK] = def(TILE.brick);
 BLOCKS[B.PLANKS] = def(TILE.planks);
 // ガラスは衝突するが隣の面を隠さない（テクスチャの透明部分は alphaTest で抜く）
 BLOCKS[B.GLASS] = { ...def(TILE.glass), opaque: false };
+
+// 装飾（tools/lib/decor.mjs が置く）。手すりは衝突するが透けて見える（落下防止）
+BLOCKS[B.RAILING] = { ...def(TILE.railing_top, TILE.railing, TILE.railing_top), opaque: false };
+BLOCKS[B.SIGN] = def(TILE.sign);
+BLOCKS[B.GYOZA] = def(TILE.gyoza, TILE.gyoza_side, TILE.gyoza_bottom);
+BLOCKS[B.STEEL] = def(TILE.steel);
 
 // ホットバー（1〜9 キー）。name は表示名
 export const HOTBAR = [

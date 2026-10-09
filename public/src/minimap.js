@@ -15,6 +15,12 @@ export function renderMapImage(w) {
       c = [205 * f, 175 * f, 160 * f];
     } else c = GROUND_RGB[w.ground[k]] || GROUND_RGB[0];
     if (w.deck[k] && !w.bld[k]) c = c.map((v) => v * 0.8 + 40);
+    // 起伏の陰影（北西からの光）。等高線は 2 ブロックごと
+    if (w.elev) {
+      const i = k % w.W, g = w.elev[k];
+      const sh = 1 + 0.18 * ((g - (i > 0 ? w.elev[k - 1] : g)) + (g - (k >= w.W ? w.elev[k - w.W] : g)));
+      c = c.map((v) => v * sh * (0.94 + 0.12 * g / 40));
+    }
     d[k * 4] = c[0]; d[k * 4 + 1] = c[1]; d[k * 4 + 2] = c[2]; d[k * 4 + 3] = 255;
   }
   const canvas = document.createElement('canvas');

@@ -15,6 +15,9 @@ import { Minimap } from './minimap.js';
 import { skyAt, hoursAt, formatTime } from './daynight.js';
 import { TouchControls, isTouchDevice } from './touch.js';
 import { ATLAS_COLS } from './chunk.js';
+import { createWorkerMesher } from './mesher.js';
+import { TramView } from './tram-view.js';
+import { addSigns } from './signs.js';
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.get('debug') === '1';
@@ -23,15 +26,16 @@ const START_HOURS = params.has('time') ? Number(params.get('time')) : 10;
 const INITIAL_BUDGET_MS = 40; // 初回ロード中は 1 フレームあたり多めに作る
 const FRAME_BUDGET_MS = 6;
 const REACH = 6; // 壊す・置くの届く距離[m]
+const USE_WORKER = params.get('worker') !== '0'; // ?worker=0 で本スレッド生成（比較・不具合切り分け用）
+const STEP_SMOOTH = 6; // 段差を自動で上がったときのカメラの追従速度[m/s]
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $('status'), progressEl = document.querySelector('#progress div'), overlay = $('overlay'), startBtn = $('start');
 
 async function main() {
-  const [world, storage] = await Promise.all([
-    loadWorld(new URL('./world/', document.baseURI), (f) => { progressEl.style.width = `${f * 30}%`; }),
-    openEditStorage(),
-  ]);
+  const world = await loadWorld(new URL('./world/', document.baseURI), (f) => { progressEl.style.width = `${f * 30}%`; });
+  // 地形が変わると過去の編集の座標が合わなくなるので、world.json の editsVersion が上がったら保存済みの編集を捨てる
+  const storage = await openEditStorage(world.meta.editsVersion || 1);
   // 保存済みの編集差分を読む
   world.edits = new EditStore();
   for (const { key, entries } of await storage.loadAll()) {
@@ -65,8 +69,20 @@ async function main() {
   const sky = makeSky();
   scene.add(sky);
 
+  // ライトライン（車体は頂点カラーのみ。昼夜の明るさは地形と同じく色の乗算）
+  const tramMaterial = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const trams = new TramView(world, scene, tramMaterial);
+  let tramClock = 0; // デバッグ用: 運行時刻のずらし[s]
+  addSigns(scene, world.meta.signs);
+
+  // チャンク生成は Web Worker で（使えない環境では本スレッドで予算制）
+  let mesher = null;
+  if (USE_WORKER && typeof Worker !== 'undefined') {
+    try { mesher = await createWorkerMesher(world); } catch (e) { console.warn('Web Worker が使えないため本スレッドでチャンクを生成します', e); }
+  }
   const chunks = new ChunkManager(world, {
     viewDist: VIEW_DIST,
+    mesher,
     makeMesh(m) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
@@ -106,15 +122,21 @@ async function main() {
   const hud = new Hud(world.meta);
   const minimap = new Minimap(world, $('minimap'));
   let ready = false;
-  const stats = { ...chunks.stats, frameMs: 0, fps: 0, loadMs: 0, viewDist: chunks.viewDist, edits: world.edits.size };
+  const stats = { ...chunks.stats, frameMs: 0, fps: 0, loadMs: 0, viewDist: chunks.viewDist, edits: world.edits.size, workers: mesher ? mesher.count : 0 };
+  let stepLag = 0; // 段差を上がった直後、カメラを少し遅らせて滑らかに見せる量[m]
+  // 性能評価用: 初回ロード後、チャンクを読み込み中のフレームの本スレッド処理時間（テレポートでリセット）
+  const stream = { frames: 0, maxMs: 0, sumMs: 0 };
 
   function teleport(x, z, heading = null, opts = {}) {
     if (opts.y != null) {
       Object.assign(player, { x, z, y: opts.y, vx: 0, vy: 0, vz: 0, flying: true });
     } else {
-      const s = findSpawn(world, x, z, 100) || { x, y: 1, z };
+      const k = cellIndex(world, Math.floor(x), Math.floor(z));
+      const s = findSpawn(world, x, z, 100) || { x, y: (k >= 0 ? world.elev[k] : 0) + 1, z };
       Object.assign(player, { x: s.x, y: s.y, z: s.z, vx: 0, vy: 0, vz: 0, flying: false });
     }
+    stepLag = 0; player.stepped = 0;
+    Object.assign(stream, { frames: 0, maxMs: 0, sumMs: 0 });
     if (heading != null) controls.yaw = headingToYaw(heading);
     if (opts.pitch != null) controls.pitch = (opts.pitch * Math.PI) / 180;
     stats.pending = chunks.update(player.x, player.z, 0); // 待ちチャンク数をすぐ更新
@@ -167,9 +189,10 @@ async function main() {
   document.addEventListener('visibilitychange', () => { if (document.hidden) flushSaves(); });
   function afterEdit(pos) {
     if (!pos) return false;
-    for (const [cx, cz] of affectedChunks(pos[0], pos[2])) chunks.rebuild(cx, cz);
-    // チャンク単位で少し待ってまとめて保存
     const cx = Math.floor(pos[0] / 16), cz = Math.floor(pos[2] / 16), key = `${cx},${cz}`;
+    mesher?.setEdits(key, world.edits.serialize(cx, cz)); // 作り直しの依頼より先に Worker の差分を更新
+    for (const [ax, az] of affectedChunks(pos[0], pos[2])) chunks.rebuild(ax, az);
+    // チャンク単位で少し待ってまとめて保存
     clearTimeout(saveTimers.get(key));
     saveTimers.set(key, setTimeout(() => { saveTimers.delete(key); storage.save(key, world.edits.serialize(cx, cz)); }, 300));
     return true;
@@ -212,6 +235,7 @@ async function main() {
     if (!confirm('ブロックの編集をすべて元に戻します。よろしいですか？')) return;
     const keys = [...world.edits.chunks.keys()];
     world.edits.clear();
+    mesher?.clearEdits();
     await storage.clear();
     for (const k of keys) {
       const [cx, cz] = k.split(',').map(Number);
@@ -236,6 +260,7 @@ async function main() {
     window.__setTime = (h) => { timeOffset = h - hoursAt(performance.now() / 1000, START_HOURS); };
     window.__toggleMap = () => minimap.toggle();
     window.__pause = () => { controls.setActive(false); overlay.classList.remove('hidden'); updateEditCount(); };
+    window.__tramTime = (t) => { tramClock = t - performance.now() / 1000; }; // 運行時刻を t 秒にする
     window.__flushSaves = () => Promise.all([...world.edits.chunks.keys()].map((k) => {
       const [cx, cz] = k.split(',').map(Number);
       return storage.save(k, world.edits.serialize(cx, cz));
@@ -272,11 +297,13 @@ async function main() {
     if (touch && controls.active) input = touch.apply(input);
     // 初回生成が終わるまでは物理を止める（足場ができる前に落ちない）
     if (ready) stepPlayer(player, input, dt, solid, water);
+    stepLag = Math.max(0, Math.min(1.5, stepLag + player.stepped) - STEP_SMOOTH * dt);
+    player.stepped = 0;
     // ダッシュ中は視野角を少し広げて速さを感じやすくする
     const fov = input.sprint && input.forward > 0 && !player.inWater ? 84 : 75;
     if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 10); camera.updateProjectionMatrix(); }
 
-    camera.position.set(player.x, player.y + PLAYER.EYE, player.z);
+    camera.position.set(player.x, player.y + PLAYER.EYE - stepLag, player.z);
     camera.rotation.set(controls.pitch, controls.yaw, 0);
     sky.position.copy(camera.position);
 
@@ -290,8 +317,12 @@ async function main() {
       zenith.setRGB(...s.top);
       paintSky(sky, zenith, horizon);
       material.color.setScalar(s.light);
+      tramMaterial.color.setScalar(s.light);
       stats.hours = hours;
     }
+
+    trams.update(now / 1000 + tramClock);
+    stats.trams = trams.positions;
 
     // 狙っているブロックの枠
     const hit = ready && (controls.active || DEBUG) ? currentHit() : null;
@@ -303,9 +334,11 @@ async function main() {
     fpsFrames++;
     if (now - fpsTime > 500) { fps = Math.round((fpsFrames * 1000) / (now - fpsTime)); fpsFrames = 0; fpsTime = now; }
     const cpuMs = performance.now() - cpu0;
+    if (ready && pending > 0) { stream.frames++; stream.sumMs += cpuMs; stream.maxMs = Math.max(stream.maxMs, cpuMs); }
+    stats.stream = { frames: stream.frames, maxMs: +stream.maxMs.toFixed(2), avgMs: +(stream.sumMs / Math.max(1, stream.frames)).toFixed(2) };
     stats.frameMs = stats.frameMs ? stats.frameMs * 0.9 + cpuMs * 0.1 : cpuMs;
-    Object.assign(stats, chunks.stats, { fps, viewDist: chunks.viewDist, drawCalls: renderer.info.render.calls, edits: world.edits.size, slot });
-    hud.update(player, controls.yaw, fps, DEBUG ? `chunks ${stats.chunks} (待ち ${stats.pending}) 頂点 ${stats.vertices} 生成 ${stats.avgChunkMs.toFixed(1)}ms/chunk` : '', now);
+    Object.assign(stats, chunks.stats, { fps, playerY: player.y, viewDist: chunks.viewDist, drawCalls: renderer.info.render.calls, edits: world.edits.size, slot });
+    hud.update(player, controls.yaw, fps, DEBUG ? `chunks ${stats.chunks} (待ち ${stats.pending}) 頂点 ${stats.vertices} 生成 ${stats.avgChunkMs.toFixed(1)}ms/chunk 転送 ${stats.uploadMs.toFixed(1)}ms ${mesher ? `Worker×${mesher.count}` : '本スレッド'}` : '', now);
     $('clock').textContent = formatTime(hours);
     minimap.draw(player, yawToHeading(controls.yaw), world.meta.teleports);
   }

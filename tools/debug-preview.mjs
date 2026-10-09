@@ -2,6 +2,7 @@
 // 使い方: node tools/debug-preview.mjs [--x=0 --z=0 --r=1000 --scale=1 --out=name] [--highlight=名前1,名前2]
 //   x,z: 中心のローカル座標[m]、r: 半径[m]、scale: 1m あたりのピクセル数
 //   highlight: 指定した name を含む道路・線路の way を OSM 生データから探して色付きで重ねる
+//   elev: 地表の高さ（elev.bin）を段彩＋陰影で描く（建物は輪郭だけ暗く）。等高線は 2 ブロックごと
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { PATHS } from './config.mjs';
@@ -9,11 +10,16 @@ import { encodePNG } from './lib/png.mjs';
 import { makeProjection } from './lib/geo.mjs';
 import { strokePolyline } from './lib/raster.mjs';
 
-const args = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, '').split('=')));
+const args = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, v] = a.replace(/^--/, '').split('='); return [k, v ?? true]; }));
 const world = JSON.parse(fs.readFileSync(`${PATHS.worldDir}/world.json`, 'utf8'));
 const W = world.size.x, H = world.size.z, { west, north } = world.extent;
 const read = (n) => new Uint8Array(zlib.gunzipSync(fs.readFileSync(`${PATHS.worldDir}/${n}.bin.gz`)));
 const ground = read('ground'), bld = read('bld'), bldtype = read('bldtype'), deck = read('deck');
+const elev = world.files.elev ? read('elev') : new Uint8Array(W * H);
+const gMax = Math.max(1, world.terrain?.max || 1);
+// 段彩: 低い=緑 → 黄 → 茶 → 白
+const RAMP = [[60, 140, 80], [170, 200, 100], [210, 170, 90], [150, 100, 60], [245, 245, 245]];
+const ramp = (t) => { const f = Math.max(0, Math.min(0.9999, t)) * (RAMP.length - 1), a = Math.floor(f), u = f - a; return RAMP[a].map((v, c) => v + (RAMP[a + 1][c] - v) * u); };
 
 const GROUND_RGB = {
   grass: [150, 190, 110], dirt: [170, 140, 100], asphalt: [70, 70, 75], sidewalk: [190, 185, 175],
@@ -42,7 +48,18 @@ for (let py = 0; py < S; py++) {
     if (i < 0 || j < 0 || i >= W || j >= H) { img[o] = img[o + 1] = img[o + 2] = 30; continue; }
     const k = j * W + i;
     let c;
-    if (bld[k]) {
+    if (args.elev) {
+      const g = elev[k];
+      c = ramp(g / gMax);
+      // 陰影（北西からの光）
+      const gw = i > 0 ? elev[k - 1] : g, gn = j > 0 ? elev[k - W] : g;
+      const shade = 1 + 0.25 * ((g - gw) + (g - gn));
+      c = c.map((v) => Math.min(255, v * shade));
+      if (ground[k] === 5) c = [70, 130, 210];
+      if (bld[k]) c = c.map((v) => v * 0.75);
+      const ge = i + 1 < W ? elev[k + 1] : g, gs = j + 1 < H ? elev[k + W] : g;
+      if ((ge !== g && Math.max(ge, g) % 2 === 0) || (gs !== g && Math.max(gs, g) % 2 === 0)) c = [40, 40, 40]; // 等高線
+    } else if (bld[k]) {
       // 建物: 種別色を高さで暗く（高いほど濃い）
       const f = 1 - Math.min(bld[k], 60) / 100;
       c = bColor[bldtype[k] & 15].map((v) => v * f);
