@@ -92,3 +92,35 @@ test('装飾: デッキの縁は手すりで、歩いて落ちない（東口デ
   console.log(`デッキから16方向: 階段で下りた ${down}、落ちた ${fell}`);
   assert.equal(fell, 0, 'デッキの縁から落ちた方向がある');
 });
+
+test('装飾: デッキの上の 400 地点から無作為に歩き回っても（ジャンプ・ダッシュ込み）、階段以外で 2m 以上落ちない', () => {
+  let seed = 11;
+  const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296);
+  const pts = [];
+  for (let k = 0; k < w.W * w.H; k++) {
+    if (!w.deck[k] || w.deck[k] > 9) continue; // ペデストリアンデッキ・歩道橋（鉄道高架は除く）
+    const x = (k % w.W) - w.west, z = Math.floor(k / w.W) - w.north, y = w.elev[k] + 1 + w.deck[k];
+    if (blockAt(w, x, y, z) === B.DECK && blockAt(w, x, y + 1, z) === B.AIR && blockAt(w, x, y + 2, z) === B.AIR) pts.push([x, y, z]);
+  }
+  const onStairs = (x, z) => st.stairsAt.some((s) => {
+    const rx = x - s.top[0], rz = z - s.top[1];
+    const t = rx * s.dir[0] + rz * s.dir[1], l = Math.abs(-rx * s.dir[1] + rz * s.dir[0]);
+    return t > -1.5 && t < s.steps + 1.5 && l < 2.5;
+  });
+  let falls = 0;
+  for (let n = 0; n < 400; n++) {
+    const [x, y, z] = pts[Math.floor(rnd() * pts.length)];
+    const p = createPlayer(x + 0.5, y + 1, z + 0.5);
+    let yaw = rnd() * Math.PI * 2, usedStairs = false;
+    for (let f = 0; f < 60 * 15; f++) {
+      if (f % 90 === 0) yaw = rnd() * Math.PI * 2;
+      stepPlayer(p, { forward: 1, yaw, jump: rnd() < 0.05, sprint: rnd() < 0.5 }, 1 / 60, solid, water);
+      assert.ok(!collides(p.x, p.y, p.z, solid));
+      // 階段を駆け下りると段の間で宙に浮くので、着地点ではなく途中で階段の範囲を通ったかで判定
+      if (p.y < y + 1 && onStairs(p.x, p.z)) usedStairs = true;
+      if (p.y < y + 1 - 2) { if (p.onGround && !usedStairs) { falls++; console.log("落下", [x, y, z], "→", [p.x, p.y, p.z].map((v) => v.toFixed(1)).join(",")); } if (p.onGround) break; }
+    }
+  }
+  console.log(`デッキ ${pts.length} 地点から 400 回: 階段以外での落下 ${falls}`);
+  assert.equal(falls, 0);
+});

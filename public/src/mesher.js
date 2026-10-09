@@ -28,15 +28,24 @@ export async function createWorkerMesher(world, n = workerCount()) {
     workers.push(w);
     busy.push(0);
   }
-  // 起動確認: 1 チャンク作れることを確かめる（module Worker 非対応・読み込み失敗を検出）
-  await new Promise((ok, ng) => {
-    const timer = setTimeout(() => ng(new Error('Worker の起動がタイムアウト')), 15000);
-    for (const w of workers) w.onerror = (e) => { clearTimeout(timer); ng(e.error || new Error(e.message || 'Worker error')); };
-    const id = nextId++;
-    waiting.set(id, { w: 0, done: () => { clearTimeout(timer); ok(); } });
-    busy[0]++;
-    workers[0].postMessage({ type: 'build', id, cx: 0, cz: 0 });
-  });
+  // 起動確認: すべての Worker が 1 チャンク作れることを確かめる（module Worker 非対応・読み込み失敗を検出）。
+  // 1 つでも失敗したら全部止めて reject（呼び出し側が本スレッド生成に切り替える）
+  try {
+    await new Promise((ok, ng) => {
+      const timer = setTimeout(() => ng(new Error('Worker の起動がタイムアウト')), 15000);
+      let left = n;
+      workers.forEach((w, i) => {
+        w.onerror = (e) => { clearTimeout(timer); ng(e.error || new Error(e.message || 'Worker error')); };
+        const id = nextId++;
+        waiting.set(id, { w: i, done: () => { if (--left === 0) { clearTimeout(timer); ok(); } } });
+        busy[i]++;
+        w.postMessage({ type: 'build', id, cx: 0, cz: 0 });
+      });
+    });
+  } catch (e) {
+    for (const w of workers) w.terminate();
+    throw e;
+  }
   return {
     count: n,
     capacity() { let c = 0; for (const b of busy) c += PER_WORKER - b; return c; },

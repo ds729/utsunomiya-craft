@@ -108,14 +108,15 @@ export function baseBlockAt(w, k, by) {
   return id;
 }
 
-// 衝突判定用。ワールド外周（水平方向の範囲外）と岩盤より下は壁として扱う。手すりの上の 1 ブロックも衝突する
+// 衝突判定用。ワールド外周（水平方向の範囲外）と岩盤より下は壁として扱う。手すりの上の 2 ブロックも衝突する
 export function isSolidAt(w, x, by, z) {
   if (by < Y_MIN) return true;
   if (cellIndex(w, x, z) < 0) return true;
-  if (by > Y_MAX + 1) return false;
+  if (by > Y_MAX + 2) return false;
   if (SOLID[blockAt(w, x, by, z)] === 1) return true;
-  // 手すりは柵のように 1 つ上のブロックまで衝突する（段差の自動上り・ジャンプで乗り越えて落ちない）
-  return blockAt(w, x, by - 1, z) === B.RAILING;
+  // 手すりは柵のように上 2 ブロックまで衝突する（段差の自動上り・ジャンプで乗り越えて落ちない。
+  // 1 段高い隣の床から手すりの上へ自動で上がることも防ぐ）
+  return blockAt(w, x, by - 1, z) === B.RAILING || blockAt(w, x, by - 2, z) === B.RAILING;
 }
 
 export function isWaterAt(w, x, by, z) {

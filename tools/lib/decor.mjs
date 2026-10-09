@@ -92,22 +92,73 @@ export function buildDecor(w, elements, toLocal, trams) {
     (stats.stairsAt ||= []).push({ top: [Math.round(ex), Math.round(ez)], dir: [Math.round(ux * 100) / 100, Math.round(uz * 100) / 100], steps: n });
   }
 
+  // 階段の横（隣が階段でも床板でもなく、2 段以上低い）にも手すり
+  const surfaceTop = (x, z, from) => { for (let y = from; y > -4; y--) if (get(x, y, z) !== B.AIR) return y; return -4; };
+  for (const c of stairCells) {
+    const [x, z] = c.split(',').map(Number);
+    const y = surfaceTop(x, z, Y_MAX);
+    if (get(x, y + 1, z) !== B.AIR) continue;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, nz = z + dz;
+      if (stairCells.has(`${nx},${nz}`) || cell(nx, nz) < 0) continue;
+      const ny = surfaceTop(nx, nz, y + 2);
+      // 手すりは段の外側（隣の列の宙）に付ける（階段の幅をそのまま歩ける）。      // 2 段重ねる（上の段やデッキから跳んで、下っていく段の手すりを越えないように）
+      if (ny <= y - 2 && get(nx, y + 1, nz) === B.AIR) {
+        // 手すりの衝突は上 2 ブロックまで続くので、その上面が隣の歩ける面（デッキなど）より 2 以上高くなるまで積む
+        // （低い手すりの上に段差の自動上り・ジャンプで乗って、外へ歩き出せないように）
+        let s = 0;
+        for (const [ex, ez] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) s = Math.max(s, surfaceTop(nx + ex, nz + ez, Y_MAX - 1) + 1);
+        const topRail = Math.max(y + 2, s - 1);
+        for (let yy = y + 1; yy <= topRail && get(nx, yy, nz) === B.AIR; yy++) put(nx, yy, nz, B.RAILING);
+        stats.stairRailings = (stats.stairRailings || 0) + 1;
+      }
+    }
+  }
+
   // --- 1. 高架の縁の手すり ---
+  const edges = [];
   for (let k = 0; k < w.W * w.H; k++) {
     if (!w.deck[k]) continue;
     const x = (k % w.W) - w.west, z = Math.floor(k / w.W) - w.north;
     const y = deckY(x, z);
-    if (y < 0 || get(x, y + 1, z) !== B.AIR) continue;
-    let edge = false;
+    if (y < 0 || get(x, y, z) !== B.DECK || get(x, y + 1, z) !== B.AIR) continue; // 階段の口で抜いた床板は除く
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = x + dx, nz = z + dz;
-      if (cell(nx, nz) < 0 || stairCells.has(`${nx},${nz}`)) continue;
+      if (cell(nx, nz) < 0) continue;
+      // 階段の上り口（段の高さが床板と 1 以内）は手すりを付けない。床板の横を下っていく段との境には付ける
+      if (stairCells.has(`${nx},${nz}`) && surfaceTop(nx, nz, y + 1) >= y - 1) continue;
       // 隣の列で、同じ高さか 1 段下に乗れる面があれば縁ではない（緩い段差・建物の床へつながる）
-      const walk = [y, y - 1].some((yy) => get(nx, yy, nz) !== B.AIR && get(nx, yy + 1, nz) === B.AIR);
-      const wall = get(nx, y + 1, nz) !== B.AIR; // 壁に接する
-      if (!walk && !wall) { edge = true; break; }
+      // 建物の屋上（床板のない建物の列）は乗れても縁から落ちるので、つながる面とみなさない
+      const nk = cell(nx, nz);
+      const roof = w.bld[nk] && !(w.deck[nk] && deckY(nx, nz) >= 0);
+      const walk = !roof && [y, y - 1].some((yy) => get(nx, yy, nz) !== B.AIR && get(nx, yy + 1, nz) === B.AIR);
+      // 壁に接する（2 段以上の高さがある。1 段だけの屋上は自動で上がれてしまうので壁とみなさない）
+      const wall = get(nx, y + 1, nz) !== B.AIR && get(nx, y + 2, nz) !== B.AIR;
+      // 手すりは床板の外側（隣の列の、床板の上面と同じ高さの宙）に付ける。幅 1〜2 の歩道橋でも通れる幅を残す
+      if (!walk && !wall && get(nx, y + 1, nz) === B.AIR) edges.push([nx, y + 1, nz]);
+      // 1 段高い隣の屋上（自動で上がれてしまう）は、屋上の縁の上に手すり
+      else if (!walk && !wall && get(nx, y + 1, nz) !== B.AIR && get(nx, y + 2, nz) === B.AIR) edges.push([nx, y + 2, nz]);
     }
-    if (edge) { put(x, y + 1, z, B.RAILING); stats.railings++; }
+  }
+  // 縁はすべて判定してから置く（置いた手すりを隣の判定で壁とみなして連鎖しないように）
+  for (const [x, y, z] of edges) { if (placed.get(key(x, y, z)) !== B.RAILING) { put(x, y, z, B.RAILING); stats.railings++; } }
+
+  // 仕上げ: どの手すりも、衝突の上面（手すりの最上段 + 上 2 ブロック）が隣の歩ける面より 2 以上高くなるよう積み増す
+  // （手すりの上に段差の自動上り・ジャンプで乗れると、そこから外へ歩き出して落ちるため）
+  const isRail = (x, y, z) => get(x, y, z) === B.RAILING;
+  const floorTop = (x, z, from) => { for (let y = from; y > -4; y--) { const b = get(x, y, z); if (b !== B.AIR && b !== B.RAILING) return y; } return -4; };
+  const railCols = new Map(); // "x,z" → 最上段の y
+  for (const [k, id] of placed) {
+    if (id !== B.RAILING) continue;
+    const [x, y, z] = k.split(',').map(Number);
+    const c = `${x},${z}`;
+    if (!railCols.has(c) || y > railCols.get(c)) railCols.set(c, y);
+  }
+  for (const [c, top] of railCols) {
+    const [x, z] = c.split(',').map(Number);
+    let s = -Infinity;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) s = Math.max(s, floorTop(x + dx, z + dz, top + 3) + 1);
+    for (let y = top + 1; y + 3 < s + 2 && isRail(x, y - 1, z) && get(x, y, z) === B.AIR; y++) { put(x, y, z, B.RAILING); stats.railRaised = (stats.railRaised || 0) + 1; }
   }
 
   // --- 3. 駅名板（駅舎の東西の壁面）---

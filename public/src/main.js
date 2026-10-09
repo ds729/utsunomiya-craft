@@ -72,7 +72,8 @@ async function main() {
   // ライトライン（車体は頂点カラーのみ。昼夜の明るさは地形と同じく色の乗算）
   const tramMaterial = new THREE.MeshBasicMaterial({ vertexColors: true });
   const trams = new TramView(world, scene, tramMaterial);
-  let tramClock = 0; // デバッグ用: 運行時刻のずらし[s]
+  // 運行時刻のずらし[s]。始発の待ち（40秒）の終わり近くから始め、開いてすぐ電車が動くのを見られるように
+  let tramClock = 35;
   addSigns(scene, world.meta.signs);
 
   // チャンク生成は Web Worker で（使えない環境では本スレッドで予算制）

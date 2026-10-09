@@ -84,7 +84,9 @@ try {
     const pos = await page.evaluate(() => ({ x: window.__player.x, y: window.__player.y, z: window.__player.z }));
     await page.reload();
     await page.waitForFunction(() => window.__ready === true || window.__error, null, { timeout: 180000 });
-    await page.evaluate(([p, yaw, pitch]) => window.__teleport(p.x, p.z, yaw, { y: p.y, pitch }), [pos, +(args.yaw ?? 0), +(args.pitch ?? 0)]);
+    // 方位の既定: x,z 指定なし（スポーン）なら再読み込み前と同じ 270（駅の方）
+    const yaw0 = args.yaw ?? (args.x == null && args.z == null ? 270 : 0);
+    await page.evaluate(([p, yaw, pitch]) => window.__teleport(p.x, p.z, yaw, { y: p.y, pitch }), [pos, +yaw0, +(args.pitch ?? 0)]);
     await page.evaluate(() => { window.__player.flying = false; });
     await page.waitForFunction(() => window.__stats.pending === 0, null, { timeout: 180000 });
     out.reloaded = true;

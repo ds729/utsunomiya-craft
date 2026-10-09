@@ -75,7 +75,8 @@ export function levelBanks(g, ground, W, H) {
   return n;
 }
 
-// 建物（高さ・種別が同じで 4近傍につながるセルの塊）の地表を、その塊の最低値にそろえる（屋根を平らに）
+// 建物（高さ・種別が同じで 4近傍につながるセルの塊）の地表を、その塊の最高値にそろえる（屋根を平らに）。
+// 最低値にそろえると、坂の上側から低い建物の屋上へ 1 段で上がれて、建物の間の隙間に降りて出られなくなるため
 // skip(k) が true のセル（下を歩ける上屋・線路上の駅舎）は地形のまま（周りと段差を作らない）
 export function flattenBuildings(g, bld, bldtype, W, H, skip = () => false) {
   const seen = new Uint8Array(W * H);
@@ -84,18 +85,22 @@ export function flattenBuildings(g, bld, bldtype, W, H, skip = () => false) {
   for (let s = 0; s < W * H; s++) {
     if (!bld[s] || seen[s] || skip(s)) continue;
     stack.push(s); seen[s] = 1; cells.length = 0;
-    let lo = Infinity;
+    let hi = -Infinity, adj = -Infinity; // adj: 塊に接する建物でないセルの最高
     while (stack.length) {
       const k = stack.pop();
       cells.push(k);
-      if (g[k] < lo) lo = g[k];
+      if (g[k] > hi) hi = g[k];
       const i = k % W;
       for (const q of [i > 0 ? k - 1 : -1, i < W - 1 ? k + 1 : -1, k - W, k + W]) {
+        if (q >= 0 && q < W * H && !bld[q] && g[q] > adj) adj = g[q];
         if (q < 0 || q >= W * H || seen[q] || bld[q] !== bld[k] || bldtype[q] !== bldtype[k] || skip(q)) continue;
         seen[q] = 1; stack.push(q);
       }
     }
-    for (const k of cells) g[k] = lo;
+    // 高さ 2 以上の建物は、屋上が周りの地表より 2 段以上高くなるよう持ち上げる（坂の上から屋上に 1 段で上がれない）
+    const h = bld[s];
+    if (h >= 2 && adj > -Infinity) hi = Math.max(hi, adj - h + 2);
+    for (const k of cells) g[k] = Math.min(255, hi);
     groups++;
   }
   return groups;

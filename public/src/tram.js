@@ -66,9 +66,10 @@ export function tramAt(plan, t) {
 // 折れ線上の距離 s の点と進行方向: { x, z, dx, dz }（s は 0..length にクランプ）
 export function pointAt(route, s) {
   const p = route.points;
-  if (!route._cum) { // 累積距離（初回だけ計算）
-    route._cum = [0];
-    for (let i = 1; i < p.length; i++) route._cum.push(route._cum[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+  if (!route._cum) { // 累積距離（初回だけ計算。JSON に書き出さないよう列挙しない）
+    const cum = [0];
+    for (let i = 1; i < p.length; i++) cum.push(cum[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+    Object.defineProperty(route, '_cum', { value: cum, enumerable: false });
   }
   const c = route._cum, total = c[c.length - 1];
   s = Math.max(0, Math.min(total, s));

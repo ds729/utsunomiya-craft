@@ -44,13 +44,13 @@ test('地形: ぼかし・隣接差1以下・岸の高さ・建物の敷地を�
   levelBanks(g2, ground, W, H);
   assert.equal(g2[2 * W + 2], 2);
   assert.equal(g2[0], 4);
-  // 建物: 同じ高さ・種別の塊は最低値に。skip のセルはそのまま
+  // 建物: 同じ高さ・種別の塊は最高値に。skip のセルはそのまま
   const bld = new Uint8Array(W * H), bt = new Uint8Array(W * H);
   const g3 = Uint8Array.from({ length: W * H }, (_, k) => k % W);
   for (const k of [9, 10, 11]) bld[k] = 10;
   bld[20] = 10; // 離れた別の建物
   flattenBuildings(g3, bld, bt, W, H, (k) => k === 20);
-  assert.deepEqual([...g3.slice(9, 12)], [1, 1, 1]);
+  assert.deepEqual([...g3.slice(9, 12)], [3, 3, 3]);
   assert.equal(g3[20], 4);
 });
 
@@ -88,4 +88,17 @@ test('高架: 短い床板は塊ごとに水平、長い高架は緩やかに、
   for (let i = 11; i < 60; i++) assert.equal(top(W + i), top(W + 10), `デッキは水平 i=${i}`);
   for (let i = 1; i < W; i++) assert.ok(Math.abs(top(2 * W + i) - top(2 * W + i - 1)) <= 1, '高架は緩やか');
   for (const v of deck) if (v) assert.ok(v >= 3);
+});
+
+test('実データ: 高さ2以上の建物の屋上には、周りの地表から1段で上がれない（屋上から建物の隙間に降りて閉じ込められない）', () => {
+  const w = loadRealWorld();
+  const { W, H, elev, bld, bldtype, deck } = w;
+  let n = 0;
+  for (let k = W; k < W * H - W; k++) {
+    const i = k % W;
+    if (bld[k] < 2 || i === 0 || i === W - 1) continue;
+    if ((bldtype[k] & 15) === 9 && bld[k] >= 3) continue; // 屋根だけ（下を通る）
+    for (const q of [k - 1, k + 1, k - W, k + W]) if (!bld[q] && !deck[q] && elev[k] + bld[k] <= elev[q] + 1) { n++; break; }
+  }
+  assert.equal(n, 0);
 });
