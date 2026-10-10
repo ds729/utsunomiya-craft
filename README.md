@@ -2,6 +2,8 @@
 
 JR宇都宮駅周辺の OpenStreetMap データから、1ブロック=1m のボクセル世界を生成してブラウザで歩き回る個人用アプリ（Phase 3 仕上げまで: 起伏・Web Worker・ライトライン・装飾）。
 
+公開ページ：https://ds729.github.io/utsunomiya-craft/ （main に push すると GitHub Actions で `public/` だけを自動配信）
+
 仕様：[docs/SPEC.md](docs/SPEC.md)／判断ログ：[docs/decisions.md](docs/decisions.md)
 
 ## 遊び方
