@@ -6,6 +6,16 @@ JR宇都宮駅周辺の OpenStreetMap データから、1ブロック=1m のボ�
 
 仕様：[docs/SPEC.md](docs/SPEC.md)／判断ログ：[docs/decisions.md](docs/decisions.md)
 
+## スクリーンショット
+
+![宇都宮駅東口に停車中のライトライン](docs/images/tram.jpg)
+
+| 西口（駅名板とペデストリアンデッキ） | 東口デッキと停留場 |
+|---|---|
+| ![西口](docs/images/west-exit.jpg) | ![東口デッキ](docs/images/east-deck.jpg) |
+| **餃子像** | **全体地図（M キー）** |
+| ![餃子像](docs/images/gyoza.jpg) | ![全体地図](docs/images/map.jpg) |
+
 ## 遊び方
 ```
 python3 -m http.server 8000 -d public
